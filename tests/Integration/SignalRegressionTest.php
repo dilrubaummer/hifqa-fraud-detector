@@ -23,6 +23,51 @@ class SignalRegressionTest extends TestCase {
 		return $order;
 	}
 
+	// ── odd_hours ──────────────────────────────────────
+
+	/**
+	 * Store time zone, the order's local time, and whether odd_hours fires.
+	 * The Qatar 07:00 and New York 01:00 rows are where store time and UTC
+	 * disagree, so they catch a check that reads the hour in UTC.
+	 */
+	public function odd_hours_cases() {
+		return array(
+			'Qatar 03:00 (00:00 UTC)'                  => array( 'Asia/Qatar', '03:00', true ),
+			'Qatar 05:59, last odd minute'             => array( 'Asia/Qatar', '05:59', true ),
+			'Qatar 06:00'                              => array( 'Asia/Qatar', '06:00', false ),
+			'Qatar 07:00 (04:00 UTC)'                  => array( 'Asia/Qatar', '07:00', false ),
+			'Qatar 09:00 (06:00 UTC)'                  => array( 'Asia/Qatar', '09:00', false ),
+			'New York 01:00 (06:00 UTC)'               => array( 'America/New_York', '01:00', true ),
+			'UTC+3 offset, no city, 03:00'             => array( '+03:00', '03:00', true ),
+			'UTC+3 offset, no city, 07:00 (04:00 UTC)' => array( '+03:00', '07:00', false ),
+		);
+	}
+
+	/**
+	 * @dataProvider odd_hours_cases
+	 */
+	public function test_odd_hours_uses_the_store_time_zone( $zone, $local_time, $fires ) {
+		if ( '+' === $zone[0] ) {
+			update_option( 'timezone_string', '' );
+			update_option( 'gmt_offset', 3 );
+		} else {
+			update_option( 'timezone_string', $zone );
+		}
+		// A winter date, so New York is on standard time (UTC-5).
+		$placed = new \DateTimeImmutable( "2026-01-15 {$local_time}", new \DateTimeZone( $zone ) );
+
+		$order = $this->make_order( array( 'date_created' => $placed->getTimestamp() ) );
+
+		$this->assertSame( $local_time, $order->get_date_created()->date( 'H:i' ), 'precondition: the order reads as store-local time' );
+		$this->assertSame( $fires, in_array( 'odd_hours', (array) $order->get_meta( '_aifd_fired_signals' ), true ) );
+	}
+
+	public function test_odd_hours_reason_says_before_6am_store_time() {
+		$reasons = aifd_calculate_risk_score( $this->clean_signals( array( 'odd_hours' => true ) ) )['reasons'];
+
+		$this->assertSame( array( 'Order placed before 6am (store time) (+5)' ), $reasons );
+	}
+
 	// ── high_velocity ──────────────────────────────────
 
 	public function test_loyal_customer_with_old_orders_does_not_trip_high_velocity() {

@@ -39,7 +39,7 @@
     "pattern": "disposable_email no_phone_number order_total_anomaly odd_hours guest_checkout",
     "fraud_type": "card_fraud",
     "source": "synthetic_seed",
-    "description": "Card fraud: disposable email, no phone number, order far above store average, placed between midnight and 5am, guest checkout"
+    "description": "Card fraud: disposable email, no phone number, order far above store average, placed before 6am, guest checkout"
   },
   {
     "id": "seed_008",
@@ -60,7 +60,7 @@
     "pattern": "disposable_email address_mismatch order_total_anomaly odd_hours",
     "fraud_type": "card_fraud",
     "source": "synthetic_seed",
-    "description": "Card fraud: disposable email, billing and shipping countries differ, order far above store average, placed between midnight and 5am"
+    "description": "Card fraud: disposable email, billing and shipping countries differ, order far above store average, placed before 6am"
   },
   {
     "id": "seed_011",
@@ -95,7 +95,7 @@
     "pattern": "disposable_email address_mismatch no_phone_number order_total_anomaly odd_hours new_account",
     "fraud_type": "card_fraud",
     "source": "synthetic_seed",
-    "description": "Card fraud: brand-new account, disposable email, billing and shipping countries differ, no phone number, order far above store average, placed between midnight and 5am"
+    "description": "Card fraud: brand-new account, disposable email, billing and shipping countries differ, no phone number, order far above store average, placed before 6am"
   },
   {
     "id": "seed_016",
@@ -109,7 +109,7 @@
     "pattern": "card_testing_pattern high_velocity odd_hours",
     "fraud_type": "card_testing",
     "source": "synthetic_seed",
-    "description": "Card testing: card testing pattern with repeated orders, placed between midnight and 5am"
+    "description": "Card testing: card testing pattern with repeated orders, placed before 6am"
   },
   {
     "id": "seed_018",
@@ -158,7 +158,7 @@
     "pattern": "chargeback_history no_phone_number order_total_anomaly odd_hours guest_checkout",
     "fraud_type": "chargeback_fraud",
     "source": "synthetic_seed",
-    "description": "Repeat fraud: previous confirmed fraud for this email, no phone number, order far above store average, placed between midnight and 5am, guest checkout"
+    "description": "Repeat fraud: previous confirmed fraud for this email, no phone number, order far above store average, placed before 6am, guest checkout"
   },
   {
     "id": "seed_025",
@@ -200,7 +200,7 @@
     "pattern": "disposable_email first_order_high_value payment_method_risk odd_hours",
     "fraud_type": "card_fraud",
     "source": "synthetic_seed",
-    "description": "Card fraud: disposable email, high value first order, risky payment method, placed between midnight and 5am"
+    "description": "Card fraud: disposable email, high value first order, risky payment method, placed before 6am"
   },
   {
     "id": "seed_032",
@@ -235,14 +235,14 @@
     "pattern": "first_order_high_value risky_country_combo no_phone_number odd_hours",
     "fraud_type": "card_fraud",
     "source": "synthetic_seed",
-    "description": "Card fraud: high value first order, high-risk country combination, no phone number, placed between midnight and 5am"
+    "description": "Card fraud: high value first order, high-risk country combination, no phone number, placed before 6am"
   },
   {
     "id": "seed_037",
     "pattern": "disposable_email chargeback_history order_total_anomaly odd_hours",
     "fraud_type": "chargeback_fraud",
     "source": "synthetic_seed",
-    "description": "Repeat fraud: disposable email, previous confirmed fraud for this email, order far above store average, placed between midnight and 5am"
+    "description": "Repeat fraud: disposable email, previous confirmed fraud for this email, order far above store average, placed before 6am"
   },
   {
     "id": "seed_038",
@@ -263,7 +263,7 @@
     "pattern": "card_testing_pattern high_velocity odd_hours guest_checkout new_account",
     "fraud_type": "card_testing",
     "source": "synthetic_seed",
-    "description": "Card testing: brand-new account, card testing pattern with repeated orders, placed between midnight and 5am, guest checkout"
+    "description": "Card testing: brand-new account, card testing pattern with repeated orders, placed before 6am, guest checkout"
   },
   {
     "id": "seed_042",
@@ -277,7 +277,7 @@
     "pattern": "address_mismatch freight_forwarder first_order_high_value odd_hours",
     "fraud_type": "reshipping_fraud",
     "source": "synthetic_seed",
-    "description": "Reshipping: billing and shipping countries differ, freight forwarder address, high value first order, placed between midnight and 5am"
+    "description": "Reshipping: billing and shipping countries differ, freight forwarder address, high value first order, placed before 6am"
   },
   {
     "id": "seed_044",
@@ -319,7 +319,7 @@
     "pattern": "card_testing_pattern high_velocity risky_country_combo odd_hours",
     "fraud_type": "card_testing",
     "source": "synthetic_seed",
-    "description": "Card testing: card testing pattern with repeated orders, high-risk country combination, placed between midnight and 5am"
+    "description": "Card testing: card testing pattern with repeated orders, high-risk country combination, placed before 6am"
   },
   {
     "id": "seed_050",
@@ -333,7 +333,7 @@
     "pattern": "odd_hours",
     "fraud_type": "legitimate",
     "source": "synthetic_seed",
-    "description": "Legitimate: placed between midnight and 5am, no other risk signal"
+    "description": "Legitimate: placed before 6am, no other risk signal"
   },
   {
     "id": "legit_008",

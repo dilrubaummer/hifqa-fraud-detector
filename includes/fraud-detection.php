@@ -1171,7 +1171,7 @@ function aifd_calculate_risk_score( $signals ) {
         'payment_method_risk'    => __( 'Risky payment method used', 'hifqa-fraud-detector' ),
         'multiple_addresses'     => __( 'Multiple shipping addresses for same email', 'hifqa-fraud-detector' ),
         'order_total_anomaly'    => __( 'Order value far above store average', 'hifqa-fraud-detector' ),
-        'odd_hours'              => __( 'Order placed between midnight and 5am', 'hifqa-fraud-detector' ),
+        'odd_hours'              => __( 'Order placed before 6am (store time)', 'hifqa-fraud-detector' ),
         'guest_checkout'         => __( 'Guest checkout — no account created', 'hifqa-fraud-detector' ),
         'new_account'            => __( 'Account created less than 24 hours ago', 'hifqa-fraud-detector' ),
     );
