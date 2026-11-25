@@ -18,6 +18,7 @@ This document outlines the current status of the project and planned enhancement
 - Function/tool calling support
 - Merchant feedback loop
 - Per-merchant learning
+- AI review after checkout, for borderline orders only, with an hourly limit (1.1.0)
 
 ### Dashboard & Administration
 - React-based admin dashboard
@@ -31,6 +32,15 @@ This document outlines the current status of the project and planned enhancement
 - Easy Digital Downloads
 - SureCart
 - Shopify integration
+
+### Next releases
+- 1.2.0: card-testing guard before payment (log-only by default), a
+  decision log with labels from merchant actions and payment disputes,
+  two-way signal weights with noisy-OR scoring (shadow mode first), and
+  false positives saved as legitimate patterns
+- 1.3.0: replay evaluation on synthetic data (does the AI review, or
+  pattern context, improve decisions at all?), fixed velocity windows,
+  and a small random sample of low-score orders sent for evaluation only
 
 ### Improvements
 - Additional automated tests

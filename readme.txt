@@ -1,5 +1,5 @@
 === HIFQA Fraud Detector for WooCommerce ===
-Contributors: dilrubaummer
+Contributors: HIFQA
 Tags: fraud, woocommerce, security, ai, vector search
 Requires at least: 6.6
 Tested up to: 7.1
@@ -8,11 +8,11 @@ Stable tag: 1.0.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Real-time fraud detection for WooCommerce. Local signal scoring works out of the box; AI and vector search layers are optional.
+Fraud scoring for WooCommerce. Local signal scoring works out of the box; an AI review of borderline orders and vector search are optional.
 
 == Description ==
 
-HIFQA Fraud Detector scores every WooCommerce order against 17 weighted
+HIFQA Fraud Detector scores every WooCommerce order against 16 weighted
 fraud signals (disposable emails, address mismatches, card testing
 patterns, and more) the moment it is placed. The local scoring engine
 is pure PHP, requires no setup, and sends no data anywhere — it works
@@ -24,44 +24,79 @@ Each order gets a score from 0 to 100 and one of three decisions:
 * **Review** — the order continues, a note is added and the store admin is emailed.
 * **Block** — the order is put on hold and the store admin is emailed. It stays on hold until you release it.
 
-For stores that want deeper protection, two optional layers can be
-enabled separately — each stays off until you enter that service's
-API key in Settings:
+By default, Review starts at a score of 40 and Block at 60 (stores
+that saved their own thresholds keep them). With the local rules
+alone, most risky orders get Review rather than Block: Review needs at
+least four signals at once, and Block at least six. The scoring
+formula will be reworked in a later version.
 
-* **Vector pattern memory** — compares the order's pattern of signals
-  with known fraud patterns stored in your own Pinecone index
-  (requires a Pinecone account and an embedding provider).
-* **AI reasoning layer** — asks OpenAI, Anthropic, Google Gemini, or
-  an Ollama server you run yourself for a second opinion and a
-  plain-English explanation (requires an API key from your chosen
-  provider, or an Ollama host).
+For stores that want a second opinion, two optional layers can be
+enabled — each stays off until you enter that service's API key in
+Settings:
 
-= How the AI layer is kept in check =
+* **AI review** — after checkout, orders with a borderline score are
+  sent to OpenAI, Anthropic, Google Gemini, or an Ollama server you run
+  yourself. With OpenAI and Anthropic the model works as a tool-calling
+  agent: it asks the plugin for the local score, similar patterns and
+  recent order counts, and the plugin computes the final score from
+  those results. Gemini and Ollama get a single prompt with the order
+  facts and reply with a score, a decision and an explanation.
+* **Vector pattern memory** — finds the stored patterns closest to the
+  order's pattern of signals in your own Pinecone index and gives them
+  to the AI review as context. It runs only as part of the AI review.
+  The bundled seed patterns are synthetic examples, not records of real
+  fraud, and a match does not change the score: pattern scoring is
+  paused until it can be evaluated.
+
+= When the AI review runs =
+
+Checkout itself makes no external requests: every order is scored by
+the local rules while it is placed. Orders whose local score is
+borderline — from 10 points below the Review threshold up to just
+under the Block threshold, so 30 to 59 by default — are queued for an
+AI review that runs shortly after checkout. Orders scoring below that
+band are never sent to the AI, and orders the local rules already
+block are not sent either.
+
+* The queue is WooCommerce's own Action Scheduler, which runs on
+  WP-Cron. On a site with little traffic the review can be delayed
+  until the next visit. For prompt reviews, set up a real server cron
+  job for WP-Cron.
+* The AI review can raise a decision after checkout, for example from
+  Review to Block. A Block moves a paid (processing) or pending order
+  to On hold. Orders that are already completed, cancelled, refunded
+  or failed are not moved: they get a note and the admin email
+  instead.
+* There is an hourly limit on AI reviews (50 by default, set in
+  Settings). Orders over the limit keep their local result. If that
+  happened in the last 24 hours, admins see a notice with the count on
+  the Dashboard, the WooCommerce order screens and the HIFQA pages. It
+  can mean a bot attack, or a limit set too low for your store.
+* The HIFQA dashboard shows each flagged order's AI review status:
+  queued, done, failed, skipped, or skipped because of the hourly
+  limit.
+
+= How the AI review is kept in check =
 
 The local score is the baseline, and an AI reply is treated as
 untrusted input:
 
-* An order the local rules **block** stays blocked. The AI layer can
-  add its explanation but cannot lower the decision or the score. Only
-  you can release a blocked order.
-* The AI layer can raise a decision (for example Review to Block). It
-  can also lower a local Review to Allow — if you never want that,
-  leave the AI layer off.
+* The AI review can only raise a decision and a score, never lower
+  them. A local Review stays at least a Review, and a local Block
+  stays blocked. Only you can release a blocked order.
 * A reply with a missing or unexpected decision, or a score that is
-  not a number, counts as a failed call. Scores are limited to 0–100
-  and the decision is re-derived from the score using your thresholds.
+  not a number, counts as a failed call. So does an agent that never
+  calls its final scoring step. Scores are limited to 0–100 and the
+  decision is re-derived from the score using your thresholds.
+* With OpenAI and Anthropic, any figures the model reports are
+  ignored: the score is the local score plus 10 points if the plugin's
+  own velocity check found 3 or more orders from the same IP address
+  or email in the time window it checked.
 * A failed AI call never marks an order as passed. The order keeps its
-  local result and the order note says the AI layer was unavailable.
-
-= What the optional layers cost you at checkout =
-
-The optional layers contact the external service **while the order is
-being placed**, so checkout waits for the reply. A slow provider means
-a slower checkout, and the AI layer can make several requests for one
-order. If a service fails or times out, the order is scored by the
-local rules alone. After three failures in a row a layer pauses itself
-for ten minutes. With both layers off, no external request is made at
-all.
+  local result and gets a note saying the AI layer was unavailable.
+  After three failures in a row the AI review pauses for ten minutes.
+* The review never runs on an order you have already approved,
+  blocked, confirmed as fraud or marked as legitimate.
 
 = Compatibility =
 
@@ -87,9 +122,9 @@ Customer names, full email addresses, IP addresses, phone numbers,
 street addresses and order items are never sent to any of these
 services.
 
-**What "order data" means below.** When the AI reasoning layer is on,
-the following is sent to the AI provider you selected, once for each
-new order:
+**What "order data" means below.** When the AI review is on, the
+following is sent to the AI provider you selected, once for each order
+that gets an AI review (see "When the AI review runs"):
 
 * the order total
 * the domain of the billing email address (for example `example.com` —
@@ -103,52 +138,57 @@ new order:
   phone number provided", "guest checkout")
 
 If vector memory is also on, the closest matches found in your
-Pinecone index are included (pattern type, similarity and the stored
-description of the pattern).
+Pinecone index are included (pattern type, similarity, source label
+and the stored description of the pattern).
 
-With OpenAI and Anthropic, the plugin also sends the results of its
-own checks when the model asks for them: the local risk score with the
+With OpenAI and Anthropic, which run as a tool-calling agent, the
+plugin also sends the results of its own checks when the model asks
+for them: the local risk score with the
 reasons behind it, and how many recent orders came from the same IP
 address and from the same email (the numbers only — not the IP address
 or the email).
 
-**What "pattern text" means below.** When the vector memory layer is
-on, the order is reduced to a short line of text made of the names of
+**What "pattern text" means below.** When vector memory is on, an
+order that gets an AI review is reduced to a short line of text made of the names of
 the signals that fired, the payment method ID and the country pair —
 for example `disposable_email address_mismatch cod_payment NG_to_US`.
 
 = OpenAI =
 
-Used for AI reasoning when OpenAI is the selected provider, and to
+Used for the AI review when OpenAI is the selected provider, and to
 turn pattern text into an embedding when vector memory is on with
 OpenAI selected.
 
-* Data sent: order data (AI reasoning); pattern text (vector memory).
-* When: each time a new order is placed, and when you load seed
-  patterns or confirm an order as fraud.
+* Data sent: order data (AI review); pattern text (vector memory).
+* When: shortly after checkout, for each order that gets an AI review
+  (borderline local score, within your hourly limit); and when you load
+  seed patterns or confirm an order as fraud.
 * Endpoint: api.openai.com
 * [Terms of Service](https://openai.com/policies/services-agreement/)
 * [Privacy Policy](https://openai.com/policies/privacy-policy)
 
 = Anthropic =
 
-Used for AI reasoning when Anthropic (Claude) is the selected provider.
+Used for the AI review when Anthropic (Claude) is the selected
+provider.
 
 * Data sent: order data.
-* When: each time a new order is placed.
+* When: shortly after checkout, for each order that gets an AI review
+  (borderline local score, within your hourly limit).
 * Endpoint: api.anthropic.com
 * [Terms of Service](https://www.anthropic.com/legal/commercial-terms)
 * [Privacy Policy](https://www.anthropic.com/legal/privacy)
 
 = Google Gemini =
 
-Used for AI reasoning when Google Gemini is the selected provider, and
-to turn pattern text into an embedding when vector memory is on with
-Gemini selected.
+Used for the AI review when Google Gemini is the selected provider,
+and to turn pattern text into an embedding when vector memory is on
+with Gemini selected.
 
-* Data sent: order data (AI reasoning); pattern text (vector memory).
-* When: each time a new order is placed, and when you load seed
-  patterns or confirm an order as fraud.
+* Data sent: order data (AI review); pattern text (vector memory).
+* When: shortly after checkout, for each order that gets an AI review
+  (borderline local score, within your hourly limit); and when you load
+  seed patterns or confirm an order as fraud.
 * Endpoint: generativelanguage.googleapis.com
 * [Terms of Service](https://ai.google.dev/gemini-api/terms)
 * [Privacy Policy](https://policies.google.com/privacy)
@@ -161,8 +201,9 @@ Without that key, vector memory stays off for Anthropic — the pattern
 text is not sent to any other provider in its place.
 
 * Data sent: pattern text.
-* When: each time a new order is placed, and when you load seed
-  patterns or confirm an order as fraud.
+* When: shortly after checkout, for each order that gets an AI review
+  while vector memory is on; and when you load seed patterns or confirm
+  an order as fraud.
 * Endpoint: api.voyageai.com
 * [Terms of Service](https://www.voyageai.com/tos)
 * [Privacy Policy](https://www.voyageai.com/privacy)
@@ -180,8 +221,10 @@ index in your own Pinecone account.
   order number, risk score, customer detail or
   AI-written text is included, and the record's ID is a keyed hash,
   not the order number.
-* When: a search each time a new order is placed; a write when you
-  load seed patterns or confirm an order as fraud.
+* When: a search shortly after checkout, for each order that gets an
+  AI review while vector memory is on; a write when you load seed
+  patterns or confirm an order as fraud. Loading seed patterns also
+  deletes the seed patterns that 1.1.0 retired from your index.
 * Endpoint: the index host URL you enter (HTTPS only, normally
   `*.pinecone.io`)
 * [Terms of Service](https://www.pinecone.io/terms/)
@@ -195,10 +238,11 @@ in Settings. Nothing is sent to ollama.com by this plugin. The data
 stays on your own infrastructure only if that host is a server you
 control.
 
-* Data sent to your Ollama host: order data (AI reasoning); pattern
-  text (vector memory).
-* When: each time a new order is placed, and when you load seed
-  patterns or confirm an order as fraud.
+* Data sent to your Ollama host: order data (AI review); pattern text
+  (vector memory).
+* When: shortly after checkout, for each order that gets an AI review
+  (borderline local score, within your hourly limit); and when you load
+  seed patterns or confirm an order as fraud.
 * [Terms of Service](https://ollama.com/terms)
 * [Privacy Policy](https://ollama.com/privacy)
 
@@ -206,9 +250,11 @@ control.
 
 1. Upload and activate the plugin. WooCommerce must be active.
 2. Local fraud scoring is active immediately — no setup required.
-3. (Optional) Go to HIFQA → Settings to enable Vector Memory or AI
-   Reasoning. Each activates only once you save its API key; leave the
-   key field blank to keep the layer off.
+3. (Optional) Go to HIFQA → Settings to enable the AI review, and
+   vector memory alongside it. Each activates only once you save its
+   API key; leave the key field blank to keep the layer off.
+4. (Optional, with the AI review on) Set up a real server cron job for
+   WP-Cron, so queued AI reviews run promptly on a quiet site.
 
 == Frequently Asked Questions ==
 
@@ -217,17 +263,33 @@ Yes. Local signal scoring runs on every order automatically with no
 external service required.
 
 = What happens if my AI provider is slow or stops working? =
-The optional layers are called while the order is being placed, so a
-slow provider makes checkout slower for that order. If the provider
-fails or times out, the order is scored by the local rules instead and
-the order note says so. After three failures in a row the layer is
-paused for ten minutes, and orders during that time are scored locally
-without waiting. A provider outage never causes an order to be marked
-as passed by the AI layer.
+Checkout never waits for it: the AI review runs after checkout. If the
+provider fails or times out, the order keeps its local result and the
+order note says so. After three failures in a row the AI review is
+paused for ten minutes. A provider outage never causes an order to be
+marked as passed.
 
-= Can the AI layer approve an order that the local rules blocked? =
-No. A local block stays a block. Only you can release it, from the
+= Can the AI review lower a decision, or approve a blocked order? =
+No. It can only raise a decision. A local Review stays at least a
+Review, and a local Block stays a block until you release it from the
 HIFQA dashboard.
+
+= Why do so few orders get blocked without the AI review? =
+Each signal adds a share of the score, and even the strongest signal
+adds only 13 points. By default, Review needs at least four signals at
+once and Block at least six, so most risky orders get Review. You can lower the Block threshold in Settings. The scoring
+formula will be reworked in a later version.
+
+= My AI reviews show "Queued" for a long time. Why? =
+Queued reviews run through WooCommerce's Action Scheduler on WP-Cron,
+which only runs when someone visits the site. On a quiet site, set up
+a real server cron job for WP-Cron.
+
+= What are the seed patterns? =
+50 synthetic example patterns (47 fraud, 3 legitimate) you can load
+into Pinecone from Settings. They are made-up examples, not records of
+real fraud, and the AI is told so. If you loaded them with 1.0.0, load
+them again: 1.1.0 changed them and removes the retired ones.
 
 = Is customer data shared with anyone by default? =
 No. Out of the box, all scoring runs locally on your own server and no
@@ -248,7 +310,8 @@ to a different provider instead.
 
 = What is removed when I delete the plugin? =
 Deleting the plugin removes its settings, saved API keys, learned
-signal weights and counters. Your orders are not touched, and the
+signal weights, counters and queued AI reviews (deactivating it also
+removes the queued AI reviews). Your orders are not touched, and the
 fraud result saved on each order (score, decision, reason) stays with
 the order as part of its history. Patterns stored in your Pinecone
 index stay in your Pinecone account until you delete them there.
@@ -256,15 +319,42 @@ index stay in your Pinecone account until you delete them there.
 == Screenshots ==
 
 1. Fraud dashboard — every flagged order with its risk score, decision, country route, and one-click Confirm Fraud / Not Fraud feedback buttons.
-2. Signal Weight Personalization — the 17 signal weights adapt automatically when you override false positives, so the system learns your store's patterns.
+2. Signal Weight Personalization — the 16 signal weights adapt automatically when you override false positives, so the system learns your store's patterns.
 3. Settings — choose your AI provider (OpenAI, Anthropic, Google Gemini, or self-hosted Ollama) and configure each optional layer.
 
 == Changelog ==
+
+= 1.1.0 =
+* Changed: checkout runs the local rules only and makes no external requests. The AI review runs shortly after checkout, only for borderline orders, through WooCommerce's Action Scheduler.
+* New: hourly limit on AI reviews (default 50), with an admin notice when orders were skipped because of it.
+* New: "AI Check" column on the HIFQA dashboard.
+* Changed: the AI review can only raise a decision. It can no longer lower a local Review to Allow.
+* Changed: a plain-text reply, or an agent that never calls its final scoring step, counts as a failed AI call.
+* Changed: the agent score is no longer doubled; it is the local score plus what the plugin's own checks found.
+* Changed: pattern scoring is paused: a similar pattern no longer adds to the score, and stays context for the AI only.
+* Changed: the seed patterns are now 50 synthetic examples that use the plugin's own signal names, with no made-up counts. Load them again if you use vector memory.
+* Changed: the default Block threshold is 60 for stores that never saved one. Saved thresholds are not changed.
+* Changed: the dashboard shows the value of orders you confirmed as fraud, instead of the value of all blocked orders.
+* Changed: the odd-hours signal is labelled "before 6am (store time)", which is what it always checked.
+* Fixed: "high velocity" counts orders from the last 24 hours, not the customer's whole history.
+* Fixed: "previous confirmed fraud" (formerly chargeback history) counts only orders you confirmed as fraud, not words in order notes. Developers can add disputes with the aifd_order_has_dispute filter.
+* Fixed: orders with nothing to ship no longer count as a billing/shipping country mismatch.
+* Fixed: email matching ignores upper and lower case.
+* Fixed: orders without an IP address (created in wp-admin) no longer count as one visitor for card testing.
+* Fixed: confirming an order as fraud twice counts it once.
+* Fixed: confirming fraud no longer rewrites another pattern stored in Pinecone.
+* Fixed: deactivating the plugin removes its queued AI reviews.
+* Fixed: a Plugin Check error in the settings nonce check (no change in behaviour).
+* Removed: the IP proxy / VPN signal, which never detected anything. There are now 16 signals.
+* Removed: the per-provider Pinecone index name fields, which were never used.
 
 = 1.0.0 =
 * Initial release — local-first scoring with optional AI and vector memory layers.
 
 == Upgrade Notice ==
+
+= 1.1.0 =
+The AI review now runs after checkout, only for borderline orders, with an hourly limit, and can only raise a decision. Saved thresholds are kept. If you use vector memory, load the seed patterns again.
 
 = 1.0.0 =
 Initial release.

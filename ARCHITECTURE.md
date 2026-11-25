@@ -1,13 +1,13 @@
 # HIFQA Fraud Detector — Architecture Document
 
 > Plugin version: 1.0.0
-> Last updated: July 2026
+> Last updated: November 2026
 
 ---
 
 ## Overview
 
-HIFQA Fraud Detector is a WordPress plugin that uses local signal scoring, with optional AI function calling, Pinecone vector search, and per-merchant learning to detect and prevent ecommerce fraud in real time.
+HIFQA Fraud Detector is a WordPress plugin that scores every WooCommerce order with local signal rules at checkout. Optionally, borderline orders get an AI review shortly after checkout — a tool-calling agent with OpenAI and Anthropic, a single prompt with Gemini and Ollama — with Pinecone pattern search as context, and the store's signal weights adjust to its overrides.
 
 The plugin supports multiple AI providers — OpenAI, Anthropic, Google Gemini, and Ollama (local) — with provider-native embeddings and namespaced Pinecone indexes for full provider independence.
 
@@ -29,33 +29,37 @@ The architecture is built around the following principles:
 ## Core Architecture
 
 ```
-New Order Placed
+New order placed (checkout request)
       ↓
-Extract 17 weighted signals
+Extract 16 weighted signals → local score → ALLOW / REVIEW / BLOCK
+(no external requests during checkout)
       ↓
-Build behavior pattern text from active signals
+Local score in the AI band (review − 10 … block − 1, 30–59 by default)
+and the AI layer configured?
+      ↓ yes: as_enqueue_async_action( 'aifd_ai_score_order', … )
+─────────── after checkout (Action Scheduler) ───────────
+Skip if the merchant has judged the order, or it is blocked
       ↓
-Embed using provider-native embedding model
+Take one unit of the hourly AI budget (skip + count if used up)
       ↓
-Search Pinecone in merchant+provider namespace
+Vector memory on? Build pattern text → embed (provider-native model)
+→ search Pinecone in the site + provider namespace
       ↓
-AI Provider Agent (function calling):
-  ├── check_signal_weights(signals, merchant_weights)
-  ├── search_fraud_patterns(pinecone_context)
-  ├── check_velocity(email, ip)
-  └── calculate_final_risk(all_results)
+OpenAI / Anthropic: tool-calling agent        Gemini / Ollama: single prompt
+  ├── check_signal_weights                    → JSON verdict
+  ├── search_fraud_patterns
+  ├── check_velocity
+  └── calculate_final_risk (required)
       ↓
-Decision: ALLOW / REVIEW / BLOCK
+aifd_apply_local_floor(): keep the stricter decision and the higher score
       ↓
-REVIEW/BLOCK → merchant dashboard (React)
+REVIEW / BLOCK → merchant dashboard (React)
       ↓
 Merchant: Confirm Fraud OR Override
       ↓
-Confirm → embed pattern → store in Pinecone namespace ✅
+Confirm → embed pattern → store in Pinecone namespace
 Override → record false positive
-        → reduce signal weights for this merchant ✅
-      ↓
-System learns per merchant over time 🧠
+        → reduce signal weights for this store
 ```
 
 ## Capability Tiers (Local-First Architecture)
@@ -66,20 +70,45 @@ gate instead of requiring AI on every order.
 
 | Tier | What it does | Default | Requires |
 |------|--------------|---------|----------|
-| 0 — Local | 17 weighted signals, pure PHP | Always on | Nothing |
-| 1 — Vector Memory | Pinecone similarity search | Off | Pinecone key + host |
-| 2 — AI Reasoning | Function calling agent | Off | Provider API key |
+| 0 — Local | 16 weighted signals, pure PHP | Always on | Nothing |
+| 1 — Vector Memory | Pinecone similarity search, as context for tier 2 | Off | Pinecone key + host, and tier 2 |
+| 2 — AI Review | OpenAI / Anthropic: tool-calling agent. Gemini / Ollama: single prompt | Off | Provider API key (or Ollama host) |
 
 Each tier wraps its external calls in a try/catch. A circuit breaker
 trips after 3 consecutive failures and disables that tier for 10
-minutes, falling back to the next tier down. `aifd_score_order()`
-always has a usable score from Tier 0 at minimum.
+minutes. `aifd_score_order()` always has a usable score from Tier 0.
 
-Tiers 1 and 2 are **synchronous**: they run inside the checkout request,
-so the customer waits for the provider's reply (up to the HTTP timeout of
-each call, and the function-calling agent can make several calls). An
-outage does not lose the order, but it can slow checkout until the
-breaker opens.
+### The AI review queue
+
+`aifd_score_order()` runs Tier 0 only, so checkout never waits for an
+external service. `aifd_maybe_queue_ai_scoring()` then queues an AI
+review for borderline orders only:
+
+- **Band:** `aifd_get_ai_band()` — from 10 below the review threshold up
+  to 1 below the block threshold. Lower scores are clear passes and not
+  worth a paid call; a local block cannot go any higher.
+- **Queue:** `as_enqueue_async_action( 'aifd_ai_score_order', [ $order_id ],
+  'hifqa-fraud-detector', true )`. Unique, so a resubmitted checkout
+  queues one review. Action Scheduler runs on WP-Cron: on a quiet site a
+  review waits for the next visit unless a real server cron job runs
+  WP-Cron.
+- **Job:** `aifd_run_ai_scoring()` skips orders the merchant has judged
+  or that are blocked, re-checks that the AI layer is still on, takes
+  one unit of the hourly budget, then runs Tier 1 and Tier 2.
+- **Hourly budget:** `aifd_take_ai_budget()` — one unit per order
+  reviewed (default 50 per hour, setting `aifd_ai_hourly_budget`), kept
+  in a transient keyed by the hour. The counter is not atomic, so
+  reviews running at the same moment can go a few over. Skipped orders
+  are counted per hour in `aifd_ai_budget_skips` for a dismissible admin
+  notice on the Dashboard, the WooCommerce order screens and HIFQA pages.
+- **Status:** `_aifd_ai_status` on the order — `queued`, `done`,
+  `failed`, `skipped` or `skipped_budget` — shown in the dashboard's
+  AI Check column.
+- **After checkout:** a raised BLOCK moves a pending, processing or
+  on-hold order to on-hold; other statuses only get a note and the
+  email. The AI never releases an order.
+- **Deactivation** cancels this plugin's queued reviews (our hook in our
+  group only).
 
 ### Trust boundary for the AI tier
 
@@ -95,15 +124,21 @@ The AI reply is untrusted input and goes through
 - a failed or unusable reply trips the breaker and leaves the local
   verdict in place — it is never recorded as a pass.
 
-`aifd_apply_local_floor()` then enforces the one hard rule: **a local
-BLOCK is never lowered by the AI.** Only the merchant's Approve / Not
-Fraud action releases a blocked order.
+`aifd_apply_local_floor()` then enforces the hard rule: **the AI can only
+raise.** It keeps the stricter of the local and AI decisions and the
+higher of the two scores, so a local REVIEW never becomes ALLOW and a
+local BLOCK is never lowered. Only the merchant's Approve / Not Fraud
+action releases a blocked order.
 
-In the function-calling agent, `calculate_final_risk` builds the score
-from what the tools actually observed on the server (the local score,
-the best fraud-pattern similarity returned by Pinecone, the velocity
-check). The model supplies the explanation only; any figures it reports
-are ignored.
+In the tool-calling agent (OpenAI, Anthropic), `calculate_final_risk`
+builds the score from what the tools actually observed on the server:
+the local score, plus 10 if `check_velocity` found 3 or more orders from
+the same IP or email in the window it checked. Pattern similarity adds
+nothing while pattern scoring is paused. The model supplies the
+explanation only; any figures it reports are ignored. The final call is
+required: a model that answers in text is asked once more with
+`tool_choice` forced to `calculate_final_risk` (also forced on the last
+allowed round), and a second text answer is a failed call.
 
 Order data enters the prompt through `aifd_prompt_order_facts()`, which
 reduces every field to a fixed shape (number, ISO country code, gateway
@@ -191,13 +226,16 @@ When a merchant switches AI providers:
    Re-embed patterns:
    → All seed patterns re-embedded with new provider model
    → All confirmed merchant patterns re-embedded
-   → Stored in new namespace (e.g. 1_gemini)
+   → Stored in new namespace (e.g. merchant_1_gemini)
+   → The index host must have the new provider's dimension: between
+     providers with different dimensions, point the host at another
+     index first
    → Old namespace preserved as backup
    → Migration takes 1-2 minutes
 
    Start fresh:
    → New namespace created
-   → 65 seed patterns loaded fresh
+   → Seed patterns loaded fresh
    → Confirmed patterns NOT migrated
    → Merchant starts learning again
 
@@ -219,7 +257,7 @@ A clear warning is shown in the settings page when Ollama is selected.
 
 ### Embedding Strategy
 
-All 65 seed patterns must be embedded with the same model they will be searched with. Mixing embedding models breaks vector similarity search completely.
+All seed patterns must be embedded with the same model they will be searched with. Mixing embedding models breaks vector similarity search completely.
 
 ```
 WRONG ❌
@@ -278,49 +316,60 @@ There is no fallback. Without a Voyage key, `AIFD_Embeddings::embed()` returns f
 
 Each merchant + provider combination gets its own Pinecone namespace. This means:
 
-- Merchant A using OpenAI never pollutes Merchant B using Gemini
-- Switching providers gets a fresh namespace with correct dimensions
+- Site A using OpenAI never pollutes site B using Gemini
+- Switching providers gets a fresh namespace (the index dimension
+  must still match the provider)
 - False positive overrides only affect the merchant who reported them
 - Confirmed fraud patterns are merchant-specific, not global
 
 ### Namespace Convention
 
 ```
-{merchant_id}_{provider}
+merchant_{site_id}_{provider}
 
 Examples:
-1_openai     → merchant ID 1, using OpenAI
-1_gemini     → merchant ID 1, using Gemini
-2_openai     → merchant ID 2, using OpenAI
-2_anthropic  → merchant ID 2, using Anthropic
+merchant_1_openai     → site 1, using OpenAI
+merchant_1_gemini     → site 1, using Gemini
+merchant_2_openai     → site 2 (multisite), using OpenAI
+merchant_2_anthropic  → site 2 (multisite), using Anthropic
 ```
+
+`site_id` is `get_current_blog_id()`.
 
 ### Pinecone Index Structure
 
-Three separate indexes — one per dimension size:
+The plugin talks to one index: the **Index Host URL** in Settings. Its
+dimension must match the selected provider's embeddings:
 
-| Index Name | Dimensions | Used By |
-|-----------|------------|---------|
-| fraud-patterns-1536 | 1536 | OpenAI |
-| fraud-patterns-1024 | 1024 | Anthropic (Voyage) |
-| fraud-patterns-768 | 768 | Gemini + Ollama |
+| Dimensions | Used By |
+|------------|---------|
+| 1536 | OpenAI (text-embedding-3-small) |
+| 1024 | Anthropic (voyage-3 via Voyage AI) |
+| 768 | Gemini (gemini-embedding-001, `outputDimensionality: 768`) + Ollama (nomic-embed-text) |
+
+A store that switches between providers with different dimensions
+keeps one index per dimension and changes the host URL. (1.0.0 had
+per-provider index-name fields; nothing read them, and 1.1.0 removed
+them.)
 
 ### Seed Loading Process
 
-At install (or manual trigger from settings):
+Seeds are never loaded automatically. From Settings:
 
 ```
-Merchant clicks "Load Seed Patterns"
+Merchant clicks "Load Seed Patterns into Pinecone"
         ↓
 Detect merchant's chosen provider
         ↓
-Embed all 65 seeds using THAT provider's embedding model
+First batch only: delete the seed ids retired in 1.1.0
+(AIFD_Seed_Loader::RETIRED_SEED_IDS)
         ↓
-Store in merchant's namespace (e.g. 1_openai)
+Embed the 50 seeds with THAT provider's model,
+in batches of 10 per admin request
         ↓
-One time cost — never repeated unless provider changes
+Store in the site's namespace (e.g. merchant_1_openai)
         ↓
-Seeds available for similarity search immediately
+Repeat when the provider changes, or when an update changes the seeds
 ```
 
 ### What We Store in Pinecone
@@ -341,7 +390,7 @@ its vector id is `confirmed_<keyed hash>_<provider>`, not the order id.
     "description": "Card fraud: disposable email, billing and shipping countries differ, high value first order, no phone number, cash on delivery",
     "provider":    "openai"
   },
-  "namespace": "1_openai"
+  "namespace": "merchant_1_openai"
 }
 ```
 
@@ -350,52 +399,56 @@ its vector id is `confirmed_<keyed hash>_<provider>`, not the order id.
 We embed a natural language description of active signals, not raw data:
 
 ```
-Active signals: disposable_email, address_mismatch, high_value, no_phone
+Active signals: disposable_email, address_mismatch,
+                first_order_high_value, no_phone_number
 Payment method: cod
 Countries: US → GB
 
 Pattern text:
-"disposable_email address_mismatch no_phone_number
- first_order_high_value cod_payment US_to_GB"
+"disposable_email address_mismatch first_order_high_value
+ no_phone_number cod_payment US_to_GB"
         ↓
 Embedded → 1536d vector (OpenAI) or 768d (Gemini) etc
 ```
 
 ---
 
-## Signal Matrix — 17 Weighted Signals
+## Signal Matrix — 16 Weighted Signals
 
 ### Tier 1 — Critical signals (high weight)
 
 | Signal | Weight | Description |
 |--------|--------|-------------|
-| card_testing_pattern | 0.30 | Multiple small orders same IP < 1 hour |
-| disposable_email | 0.25 | Known disposable email provider |
-| high_velocity | 0.25 | Same email or IP, 3+ orders < 1 hour |
-| address_mismatch | 0.20 | Billing country ≠ shipping country |
-| freight_forwarder | 0.20 | Known reshipping warehouse address |
+| card_testing_pattern | 0.30 | 3+ orders from the same IP, or the same email, within 1 hour (orders without an IP are not counted as one visitor) |
+| disposable_email | 0.25 | Known disposable email domain, or a random-looking address (15+ letters/digits in a row) |
+| high_velocity | 0.25 | 3+ orders from the same billing email in the last 24 hours, this one included |
+| address_mismatch | 0.20 | Billing country ≠ shipping country (skipped when there is no shipping country) |
+| freight_forwarder | 0.20 | Shipping address line 1 contains a freight-forwarder keyword (e.g. "reship", "shipito", "myus") |
 
 ### Tier 2 — Strong signals
 
 | Signal | Weight | Description |
 |--------|--------|-------------|
-| chargeback_history | 0.22 | Previous order the merchant confirmed as fraud |
-| first_order_high_value | 0.15 | New customer, order > $500 |
-| ip_proxy_vpn | 0.12 | Order placed via VPN or proxy |
+| chargeback_history | 0.22 | An earlier order with this email that the merchant confirmed as fraud, or that the `aifd_order_has_dispute` filter marks (label: "Previous confirmed fraud") |
+| first_order_high_value | 0.15 | First order from this email, total over 500 (store currency) |
 | risky_country_combo | 0.12 | Known high-fraud billing/shipping pair |
 | mismatched_names | 0.10 | Billing name ≠ shipping name |
-| no_phone_number | 0.10 | No contact number provided |
+| no_phone_number | 0.10 | No billing phone |
 
 ### Tier 3 — Contextual signals
 
 | Signal | Weight | Description |
 |--------|--------|-------------|
-| payment_method_risk | 0.08 | Prepaid card or unusual payment method |
-| multiple_addresses | 0.08 | Same email, 3+ different shipping addresses |
-| order_total_anomaly | 0.07 | Order > 3x store average order value |
-| odd_hours | 0.05 | Order placed between 12am and 5am |
-| guest_checkout | 0.05 | No account created |
+| payment_method_risk | 0.08 | Gateway is `cod`, `cheque` or `prepaid` |
+| multiple_addresses | 0.08 | Same email, 3+ different shipping addresses (last 20 orders) |
+| order_total_anomaly | 0.07 | Order > 3× the store's average order value |
+| odd_hours | 0.05 | Placed before 6am store time (hours 00–05) |
+| guest_checkout | 0.05 | No account |
 | new_account | 0.05 | Account created < 24 hours ago |
+
+Email matching is case-insensitive, and an empty email or IP never
+matches another empty one. 1.0.0 also had an `ip_proxy_vpn` signal that
+never fired; 1.1.0 removed it, and a saved weight for it is ignored.
 
 ### Scoring Formula
 
@@ -406,15 +459,25 @@ normalized  = (raw_score / max_possible) × 100
 final_score = min(100, normalized)
 ```
 
+With the default weights `max_possible` is 2.27, so the strongest single
+signal is worth 13 points. Review (40) needs at least four signals at
+once and Block (60) at least six: with the local rules alone, most risky
+orders get REVIEW. This dilution is the known weakness of the formula;
+noisy-OR scoring and two-way weight learning are planned for 1.2.0, in
+shadow mode first.
+
 ---
 
 ## Decision States
 
+Default thresholds (used only while the store has saved none; saved
+thresholds are never overwritten):
+
 | Decision | Score Range | Action |
 |----------|-------------|--------|
 | ALLOW | 0 – 39 | Process order normally |
-| REVIEW | 40 – 70 | Hold order, notify merchant, await decision |
-| BLOCK | 71 – 100 | Hold order, alert merchant, send email |
+| REVIEW | 40 – 59 | Order continues; note, admin email, shown on the dashboard for the merchant's verdict |
+| BLOCK | 60 – 100 | Order put on hold until the merchant releases it; note and admin email |
 
 REVIEW is the most valuable state. False positives cost merchants more than fraud. A system that flags for review builds more trust than one that aggressively blocks.
 
@@ -422,41 +485,27 @@ REVIEW is the most valuable state. False positives cost merchants more than frau
 
 ## AI Function Calling
 
-OpenAI and Anthropic both support function calling natively. The agent autonomously decides which tools to call:
+OpenAI and Anthropic run the AI review as a tool-calling agent. Gemini and Ollama do not: they get one prompt built by `aifd_build_prompt()` and reply with JSON.
 
-```javascript
-tools: [
-  {
-    name: "check_signal_weights",
-    description: "Evaluate weighted fraud signals using merchant-specific weights",
-    parameters: { signals: object, merchant_weights: object }
-  },
-  {
-    name: "search_fraud_patterns",
-    description: "Search Pinecone for similar confirmed fraud patterns",
-    parameters: { embedding: array, namespace: string, threshold: number }
-  },
-  {
-    name: "check_velocity",
-    description: "Check order velocity for this order's email and IP (looked up on the server — neither is sent to the model)",
-    parameters: { window_minutes: number }
-  },
-  {
-    name: "calculate_final_risk",
-    description: "Synthesize all inputs into final risk score and decision",
-    parameters: { signal_score: number, pattern_matches: array, velocity_score: number }
-  }
-]
-```
+The model only chooses which checks to run and writes the explanation.
+Each tool runs on the server against this order; the email and IP are
+never sent to the model.
 
-### Function Calling Support Per Provider
+| Tool | Parameters | Returns |
+|------|------------|---------|
+| `check_signal_weights` | `include_reasons` (bool) | Local score, risk level, fired signals and their count (and reasons), with this store's weights |
+| `search_fraud_patterns` | `top_k` (1–10) | Similar patterns: similarity, fraud type, description, source (`synthetic_seed` or `merchant_confirmed`) |
+| `check_velocity` | `window_minutes` (1–1440) | Order counts from the same IP and email in that window |
+| `calculate_final_risk` | `reasoning` (text) | The final score and decision, computed by the store |
 
-| Provider | Function Calling | Implementation |
-|----------|-----------------|----------------|
-| OpenAI | ✅ Full | "tools" parameter |
-| Anthropic | ✅ Full | "tools" parameter (same concept) |
-| Gemini | ✅ Full | "function_declarations" parameter |
-| Ollama | ⚠️ Model dependent | Structured prompt fallback |
+### How Each Provider Is Used
+
+| Provider | Mode | Implementation |
+|----------|------|----------------|
+| OpenAI | Tool-calling agent | Chat Completions `tools`, forced `tool_choice` for the final call |
+| Anthropic | Tool-calling agent | Messages API `tools`, forced `tool_choice` for the final call |
+| Gemini | Single prompt | `aifd_build_prompt()` → JSON verdict, validated by `aifd_normalize_ai_result()` |
+| Ollama | Single prompt | Same prompt and validation as Gemini |
 
 ---
 
@@ -471,8 +520,9 @@ Two actions:
 ├── Confirm Fraud
 │     → embed behavior pattern
 │     → store in merchant namespace in Pinecone
-│     → source: merchant_confirmed
-│     → increment fraud counter
+│     → source: merchant_confirmed (context for later AI reviews;
+│       it does not change any score)
+│     → count the order once in the confirmed-fraud count and value
 │
 └── Override (not fraud — false positive)
       → record as false positive
@@ -504,10 +554,11 @@ for this merchant only — never globally
 Save as merchant_weight_profile in wp_options
       ↓
 Next order uses personalized weights
-      ↓
-After 10+ overrides, weights are calibrated
-to this merchant's specific business type 🧠
 ```
+
+Weights only move down for now, so a store that overrides often slowly
+dilutes every signal. Two-way learning (Beta prior, with confirmed fraud
+pushing weights up) is planned for 1.2.0.
 
 ### Weight Adjustment Formula
 
@@ -541,18 +592,29 @@ Physical goods store
 
 ## Seed Pattern Dataset
 
-65 patterns loaded at install into merchant's Pinecone namespace:
+`data/seed-patterns.json` holds 50 **synthetic** patterns, loaded by
+hand from Settings into the site's Pinecone namespace. They are made-up
+examples, not records of real fraud. Every seed carries
+`"source": "synthetic_seed"`, uses only tokens the plugin itself
+produces (signal names, `{gateway}_payment`), and has no counts or
+confidence values. The AI is told that a seed match is not evidence on
+its own.
 
-| Category | Count | Fraud Types Covered |
-|----------|-------|---------------------|
-| Card fraud | 20 | Stolen cards, prepaid cards, high value |
-| Card testing | 10 | Bot testing, velocity attacks, overnight |
-| Reshipping fraud | 10 | Freight forwarders, organized rings |
-| Chargeback fraud | 8 | Serial chargebacks, cycling identities |
-| Identity fraud | 7 | VPN masking, account takeover |
-| Legitimate orders | 15 | Returns, corporates, gifts, renewals |
+| fraud_type | Count |
+|------------|-------|
+| card_fraud | 16 |
+| reshipping_fraud | 9 |
+| card_testing | 8 |
+| chargeback_fraud | 7 |
+| account_takeover | 4 |
+| identity_fraud | 3 |
+| legitimate | 3 |
 
-Without legitimate patterns, every order looks suspicious because there is no contrast. The 15 legitimate patterns are as important as the 50 fraud patterns.
+1.0.0 shipped 65 seeds with invented `times_seen` and `confidence`
+values. In 1.1.0, 11 legitimate seeds were dropped because none of their
+tokens is ever produced at runtime, and 4 duplicates were merged.
+Pattern scoring is paused until a replay evaluation shows whether
+pattern context helps at all.
 
 ---
 
@@ -561,15 +623,16 @@ Without legitimate patterns, every order looks suspicious because there is no co
 ```
 WooCommerce (WordPress Hook) ─────────┐
 EDD (WordPress Hook) ─────────────────├──► AI Fraud Engine (PHP)
-SureCart (WordPress Hook) ────────────┤    ├── 17 signal extraction
+SureCart (WordPress Hook) ────────────┤    ├── 16 signal extraction
 Shopify (Webhook → Python API) ───────┘    ├── Embedding abstraction
                                            ├── Pinecone namespace search
                                            ├── Provider routing
                                            └── Weight personalization
 ```
 
-WooCommerce, EDD, SureCart — WordPress hooks (same server, zero latency).
-Shopify — webhook to separate Python/FastAPI service on Azure.
+Only WooCommerce exists today. EDD, SureCart and Shopify are planned:
+WordPress hooks for EDD and SureCart, and a webhook to a separate
+Python/FastAPI service on Azure for Shopify.
 
 ---
 
@@ -577,7 +640,8 @@ Shopify — webhook to separate Python/FastAPI service on Azure.
 
 ```
 AI Provider
-└── Choose: OpenAI / Anthropic / Gemini / Ollama
+├── Choose: OpenAI / Anthropic / Gemini / Ollama
+└── Hourly AI Limit: 50 (default, 1–1000)
 
 OpenAI Settings
 ├── API Key (used for scoring + embeddings)
@@ -594,17 +658,17 @@ Google Gemini Settings
 
 Ollama Settings
 ├── Host URL (default: http://localhost:11434)
-└── Model (any installed model)
+└── Model (any installed chat model; embeddings always use nomic-embed-text)
 
 Pinecone Settings
 ├── API Key
-├── Index: fraud-patterns-1536 (OpenAI)
-│         fraud-patterns-1024 (Anthropic)
-│         fraud-patterns-768  (Gemini/Ollama)
-└── [Load 65 Seed Patterns] button
+└── Index Host URL (its dimension must match the provider)
+
+Seed Patterns
+└── [Load Seed Patterns into Pinecone] button
 
 Risk Thresholds
-├── Block threshold: 70 (default)
+├── Block threshold: 60 (default when none is saved)
 └── Review threshold: 40 (default)
 ```
 
@@ -638,7 +702,7 @@ hifqa-fraud-detector/
 ├── readme.txt                           # WordPress.org readme (ships in the zip)
 ├── README.md                            # GitHub readme (dev-only, export-ignored)
 ├── ARCHITECTURE.md                      # This document (dev-only, export-ignored)
-├── ROADMAP.MD                           # Development roadmap (dev-only)
+├── ROADMAP.md                           # Development roadmap (dev-only)
 ├── LICENSE                              # GPL-2.0-or-later
 ├── SECURITY.md                          # Vulnerability reporting policy
 ├── package.json                         # Node dependencies (dev-only)
@@ -663,12 +727,12 @@ hifqa-fraud-detector/
 │   └── index.js                         # React dashboard
 ├── build/                               # Compiled React (ships in the zip)
 └── data/
-    └── seed-patterns.json               # 65 seed patterns
+    └── seed-patterns.json               # 50 synthetic seed patterns
 ```
 
 The release zip is produced by `git archive`, so anything marked
 `export-ignore` in `.gitattributes` (this file, `README.md`,
-`ROADMAP.MD`, `package.json`, build config) is stripped from what
+`ROADMAP.md`, `package.json`, build config) is stripped from what
 merchants actually install.
 
 ---
@@ -732,10 +796,12 @@ at all.
 
 ### Data protection
 
-Tier 0 sends nothing off-site. Tiers 1 and 2 transmit the derived
-pattern text and signal summary to the merchant's chosen provider only
-once that provider's API key has been entered — an empty key field
-means no external request is made. The pattern text is a list of signal
+Tier 0 sends nothing off-site, and checkout itself makes no external
+request. Tiers 1 and 2 transmit the derived pattern text and signal
+summary to the merchant's chosen provider only once that provider's API
+key has been entered, and only in the queued AI review of a borderline
+order (or when the merchant loads seeds or confirms fraud) — an empty
+key field means no external request is made. The pattern text is a list of signal
 names (e.g. `disposable_email address_mismatch no_phone_number`) plus the
 gateway id and country codes. The AI tier additionally receives the
 order total, the billing email's **domain**, the previous-order count and
@@ -755,8 +821,14 @@ The decisions below are the ones that most shape how the plugin behaves,
 and the reasoning behind each:
 
 - **Local-first tiers.** Tier 0 is pure PHP and always available, so a
-  provider outage degrades accuracy (and, until the breaker opens, adds
-  latency) rather than losing the order.
+  provider outage degrades accuracy rather than losing the order.
+- **AI after checkout, borderline orders only.** Checkout never waits
+  for a provider, clear passes and local blocks cost nothing, and an
+  hourly limit stops a bot burst from turning into a burst of paid
+  calls. The price is that a review can lag on a quiet site.
+- **The AI can only raise.** The local verdict is the floor, so a wrong
+  or manipulated AI reply can cost a manual review, never a missed
+  block.
 - **Provider-native embeddings.** Mixing embedding models within one
   vector space makes similarity scores meaningless, so each provider
   embeds and searches with its own model.
@@ -768,7 +840,8 @@ and the reasoning behind each:
   global weights cannot serve both.
 - **REVIEW as the default middle outcome.** False positives cost
   merchants more than the fraud they prevent, so the mid-range decision
-  holds an order for a human rather than blocking it outright.
+  flags an order for a human and lets it continue, rather than holding
+  or blocking it.
 - **Ollama support.** Gives merchants with data-sovereignty constraints
   a path that sends data only to a host they run themselves.
 

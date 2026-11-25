@@ -55,9 +55,10 @@ vulnerabilities:
   recoverable by anyone with database read access or a site administrator
   account.
 - **The AI tier is advisory, not authoritative.** Its reply is validated
-  and can never lower a local BLOCK, but it can lower a local REVIEW to
-  ALLOW. Merchants who do not want a model to have that say should leave
-  the AI tier off.
+  and can only raise the local decision: it never lowers a local REVIEW
+  or BLOCK. It can, however, raise an order to BLOCK after checkout and
+  put a pending or paid order on hold. Merchants who do not want a model
+  to have that say should leave the AI tier off.
 
 Merchants who need stronger guarantees should scope their provider keys
 to the minimum permissions available, rotate them periodically, or use

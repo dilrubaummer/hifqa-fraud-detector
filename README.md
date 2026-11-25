@@ -1,26 +1,35 @@
 # HIFQA Fraud Detector
 
-> Production-grade AI-powered fraud detection plugin 
-> for WooCommerce using OpenAI function calling, 
-> Pinecone vector search, and per-merchant learning.
+> Fraud scoring for WooCommerce: 16 weighted signals checked locally
+> on every order, with an optional AI review (OpenAI, Anthropic, Gemini
+> or Ollama) of borderline orders after checkout.
+
+> **Status:** covered by an automated test suite (PHPUnit, on both WooCommerce order storage modes).
+> Not yet evaluated on real merchant data: the seed patterns are synthetic and the signal weights are set by hand.
 
 ---
 
 ## What It Does
 
 HIFQA Fraud Detector scores every WooCommerce order
-in real time against 17 weighted fraud signals, in
-plain PHP on your own server. Optionally, an AI agent
-can then search a vector database of known fraud
-patterns, check order velocity, and add a
+at checkout against 16 weighted fraud signals, in
+plain PHP on your own server. Optionally, orders with
+a borderline score get an AI review shortly after
+checkout, which can raise the decision and adds a
 plain-English explanation.
 
 Orders are automatically:
 - ✅ **Allowed** (score 0–39) — processed normally
-- ⚠️ **Flagged for review** (score 40–69) — merchant notified
-- 🚫 **Blocked** (score 70–100) — held + email alert sent
+- ⚠️ **Flagged for review** (score 40–59) — the order continues, merchant notified
+- 🚫 **Blocked** (score 60–100) — put on hold + email alert sent
 
-Both thresholds are configurable.
+Both thresholds are configurable; these are the defaults for a store
+that never saved its own (saved thresholds are kept on update).
+
+With the local rules alone, most risky orders get Review rather than
+Block: the default weights add up to 2.27, so even the strongest
+signal is only 13 points, Review needs at least four signals at once
+and Block at least six. The scoring formula is due to be reworked.
 
 ---
 
@@ -31,22 +40,33 @@ nothing at all:
 
 | Tier | What it does | Default | Requires |
 | --- | --- | --- | --- |
-| **0 — Local** | 17 weighted signals, pure PHP | Always on | Nothing |
-| **1 — Vector Memory** | Pinecone similarity search | Off | Pinecone key + host |
-| **2 — AI Reasoning** | Function-calling agent | Off | Provider API key |
+| **0 — Local** | 16 weighted signals, pure PHP | Always on | Nothing |
+| **1 — Vector Memory** | Pinecone similarity search, as context for tier 2 | Off | Pinecone key + host, and tier 2 |
+| **2 — AI Review** | OpenAI / Anthropic: tool-calling agent. Gemini / Ollama: single prompt | Off | Provider API key (or Ollama host) |
 
-Tiers 1 and 2 call the external service **synchronously, while the order
-is being placed** — checkout waits for the reply, so a slow provider is a
-slower checkout. A failed or timed-out call falls back to the tier below,
-and a circuit breaker disables a tier for ten minutes after three
-consecutive failures. An error inside scoring is caught and logged rather
-than allowed to break the checkout request.
+**Checkout runs tier 0 only and makes no external requests.** Orders
+whose local score is borderline (from 10 below the review threshold to
+just under the block threshold: 30–59 by default) are queued with
+WooCommerce's Action Scheduler and get the tier 1 + 2 review shortly
+after checkout. Lower scores are never sent to the AI, and a local
+block is not sent either. Action Scheduler runs on WP-Cron, so on a
+quiet site a review can wait for the next visit; a real server cron
+job fixes that.
 
-The AI tier's reply is treated as untrusted input. The decision is
+- An hourly limit (default 50) caps paid AI reviews. Orders over the
+  limit keep their local result, and admins get a notice with the count.
+- A circuit breaker pauses a tier for ten minutes after three
+  consecutive failures. An error inside scoring is caught and logged
+  rather than allowed to break the checkout request.
+- The AI review can move a pending or paid order to on-hold after
+  checkout; completed, cancelled, refunded and failed orders only get a
+  note and the email.
+
+The AI reply is treated as untrusted input. The decision is
 whitelisted, the score is clamped to 0–100 and the decision re-derived
-from it, and **a local BLOCK is never lowered by the AI** — only the
-merchant can release it. An unusable reply counts as a failure, never as
-a pass.
+from it, and **the AI can only raise a decision, never lower it** — a
+local Review stays at least a Review, and only the merchant can release
+a block. An unusable reply counts as a failure, never as a pass.
 
 Tiers 1 and 2 are activated by entering an API key, and deactivated by
 clearing it. **On a fresh install with empty key fields, no order data
@@ -56,21 +76,26 @@ leaves your site.**
 
 ## Key Features
 
-**🤖 Agentic AI (Function Calling)**
-Uses OpenAI/Anthropic function calling — the AI 
-autonomously decides which tools to invoke:
-`check_signal_weights` → `search_fraud_patterns` 
-→ `check_velocity` → `calculate_final_risk`
+**🤖 AI Review: Agent or Single Prompt**
+With OpenAI and Anthropic, the AI review runs as a tool-calling agent:
+`check_signal_weights` → `search_fraud_patterns` → `check_velocity` →
+`calculate_final_risk`. The final call is required, and the score is
+computed by the plugin from what the tools observed (the local score,
+plus 10 if the velocity check is suspicious); the model only supplies
+the explanation. Gemini and Ollama get a single prompt with the order
+facts and pattern context and reply with JSON, which is validated and
+can only raise the local decision.
 
 **🧠 Vector Memory (Pinecone)**
-65 seed fraud patterns pre-loaded at install.
-Merchant-confirmed fraud patterns stored as 
-embeddings — system gets smarter over time.
+50 synthetic seed patterns (47 fraud, 3 legitimate) that you load from
+Settings, plus the patterns you confirm as fraud. The closest matches
+are given to the AI review as context. Pattern scoring is paused: a
+match does not change the score until it can be evaluated.
 
 **⚖️ Per-Merchant Learning**
-Each false positive override reduces the weight 
-of triggered signals for that merchant only. 
-Weights personalize automatically over time.
+Each false positive override lowers the weight of the signals that
+fired, for that store only (by 0.02, never below 0.01). Weights only
+move down for now; two-way learning is planned.
 
 **🔌 Multi-Provider AI**
 Choose your AI provider:
@@ -97,47 +122,34 @@ rather than sending the text somewhere else:
 
 **⚛️ React Dashboard**
 Modern React dashboard built with @wordpress/scripts:
-- Real-time stats (blocked, review, allowed)
-- Flagged orders with the reason for each decision
+- Stats (blocked, review, allowed, confirmed fraud value)
+- Flagged orders with the reason for each decision and the AI review status
 - Signal weight visualization per tier
 - Feedback buttons per order
 
 ---
 
 ## Architecture
-New Order
 
-↓
-
-17 weighted signals extracted
-
-↓
-
-Embed behavior pattern (provider-native model)
-
-↓
-
-Search Pinecone namespace (merchant + provider)
-
-↓
-
-AI Function Calling Agent:
-
-├── check_signal_weights()
-
+```
+New order (checkout)
+  ↓
+16 weighted signals → local score → ALLOW / REVIEW / BLOCK
+  ↓
+Borderline score (30–59 by default)? → queue an AI review
+  ↓  (shortly after checkout, Action Scheduler, hourly limit)
+Embed pattern text (provider-native model) → search Pinecone namespace
+  ↓
+OpenAI / Anthropic agent:            Gemini / Ollama:
+├── check_signal_weights()           single prompt → JSON verdict
 ├── search_fraud_patterns()
-
 ├── check_velocity()
-
 └── calculate_final_risk()
-
-↓
-
-ALLOW / REVIEW / BLOCK
-
-↓
-
-Merchant feedback → Pinecone learns
+  ↓
+Can only raise the local decision (REVIEW → BLOCK puts the order on hold)
+  ↓
+Merchant feedback → confirmed patterns + per-store weights
+```
 
 ---
 
@@ -157,6 +169,8 @@ Merchant feedback → Pinecone learns
 
 ## Signal Matrix
 
+16 signals; the weights add up to 2.27.
+
 ### Tier 1 — Critical
 | Signal | Weight |
 |--------|--------|
@@ -171,7 +185,6 @@ Merchant feedback → Pinecone learns
 |--------|--------|
 | Previous Confirmed Fraud | 0.22 |
 | First Order High Value | 0.15 |
-| IP Proxy / VPN | 0.12 |
 | Risky Country Combo | 0.12 |
 | Mismatched Names | 0.10 |
 | No Phone Number | 0.10 |
@@ -199,18 +212,24 @@ working fraud detection. The AI and vector layers are opt-in:
 
 **To enable Vector Memory (optional)**
 Go to **HIFQA → Settings**, enter a Pinecone API key + host
-URL, then click **Load 65 Seed Patterns**.
+URL, then click **Load Seed Patterns into Pinecone**. The index
+dimension must match the provider: 1536 (OpenAI), 1024 (Anthropic via
+Voyage AI) or 768 (Gemini, Ollama). Vector memory only runs as part of
+the AI review.
 
-**To enable AI Reasoning (optional)**
+**To enable the AI review (optional)**
 On the same page, choose a provider and enter its API key — or point
-the plugin at a local Ollama host and pay nothing.
+the plugin at a local Ollama host and pay nothing. Set the hourly
+limit, and on a quiet site set up a real server cron job for WP-Cron
+so queued reviews run promptly.
 
 Saved keys are never printed back into the page. Leave a key field blank
 to keep the saved key; tick **Remove the saved key** to turn that layer
 back off.
 
-Deleting the plugin removes its settings, keys, counters and learned
-weights (`uninstall.php`). Orders and the fraud result saved on each
+Deleting the plugin removes its settings, keys, counters, learned
+weights and queued AI reviews (`uninstall.php`; deactivating also
+removes the queued reviews). Orders and the fraud result saved on each
 order are left alone.
 
 ---
@@ -218,7 +237,8 @@ order are left alone.
 ## Requirements
 
 - WordPress 6.6+ (the dashboard depends on the `react-jsx-runtime` script that ships from 6.6)
-- WooCommerce (HPOS and the block checkout are both supported)
+- WooCommerce (HPOS and the block checkout are both supported). The AI
+  review queue uses WooCommerce's bundled Action Scheduler.
 - PHP 8.0+
 
 That's the whole list. API keys are only needed for the optional layers:
@@ -226,8 +246,8 @@ That's the whole list. API keys are only needed for the optional layers:
 | To use | You need |
 | --- | --- |
 | Local signal scoring (Tier 0) | Nothing — works on activation |
-| Vector memory (Tier 1) | A Pinecone account (free starter plan works) |
-| AI reasoning (Tier 2) | An OpenAI, Anthropic, or Gemini key — or a local Ollama host (free) |
+| Vector memory (Tier 1) | A Pinecone account (free starter plan works), plus Tier 2 |
+| AI review (Tier 2) | An OpenAI, Anthropic, or Gemini key — or a local Ollama host (free) |
 
 Anthropic users also need a Voyage AI key for embeddings, since
 Anthropic does not offer an embedding model of its own.
@@ -255,7 +275,7 @@ or `WC_DIR`. All outgoing HTTP is faked, so no API keys are used.
 ## Roadmap
 
 - [x] WooCommerce integration
-- [x] 17 fraud signal extraction
+- [x] 16 fraud signal extraction
 - [x] Multi-provider AI (OpenAI / Anthropic / Gemini / Ollama)
 - [x] Provider-native embeddings
 - [x] Pinecone vector store (namespaced)
@@ -266,7 +286,10 @@ or `WC_DIR`. All outgoing HTTP is faked, so no API keys are used.
 - [x] Local-first capability tiers + circuit breakers
 - [x] Unit and integration tests
 - [x] HPOS + block checkout support
-- [ ] WordPress.org submission
+- [x] WordPress.org release (1.0.0)
+- [x] AI review after checkout, borderline orders only, hourly limit (1.1.0)
+- [ ] Decision log, labels and two-way weight learning (1.2.0)
+- [ ] Replay evaluation on synthetic data (1.3.0)
 - [ ] Easy Digital Downloads (EDD)
 - [ ] SureCart
 - [ ] Shopify (Python + FastAPI + Azure)
