@@ -261,7 +261,7 @@ function aifd_confirm_fraud( $request ) {
 
     // Add order note
     if ( $saved ) {
-        $pinecone_note = __( 'Pattern saved to Pinecone vector store — system will recognize this fraud type faster next time.', 'hifqa-fraud-detector' );
+        $pinecone_note = __( 'Pattern saved to Pinecone. AI checks on similar orders see it as context; it does not change any score.', 'hifqa-fraud-detector' );
     } elseif ( $vector_on ) {
         /* translators: %s: the reason the pattern could not be saved */
         $pinecone_note = sprintf( __( 'Note: the pattern was not saved to Pinecone. %s', 'hifqa-fraud-detector' ), $why );
@@ -293,7 +293,7 @@ function aifd_confirm_fraud( $request ) {
     update_option( 'aifd_confirmed_patterns', $confirmed_patterns, false );
 
     if ( $saved ) {
-        $message = __( 'Confirmed as fraud. Pattern saved to Pinecone — the system will recognize this faster next time.', 'hifqa-fraud-detector' );
+        $message = __( 'Confirmed as fraud. Pattern saved to Pinecone as context for AI checks on similar orders.', 'hifqa-fraud-detector' );
     } elseif ( $vector_on ) {
         /* translators: %s: the reason the pattern could not be saved */
         $message = sprintf( __( 'Confirmed as fraud. The pattern was not saved to Pinecone: %s', 'hifqa-fraud-detector' ), $why );

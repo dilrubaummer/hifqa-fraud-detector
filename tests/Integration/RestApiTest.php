@@ -396,6 +396,32 @@ class RestApiTest extends TestCase {
 		$this->assertStringNotContainsString( 'seed_001', $this->http_requests[1]['args']['body'] );
 	}
 
+	/**
+	 * Pattern scoring is paused, so a saved pattern is context for the AI
+	 * check only. 1.0.0 promised the fraud would be recognised faster.
+	 */
+	public function test_confirm_fraud_with_pinecone_does_not_promise_faster_recognition() {
+		wp_set_current_user( $this->admin_id );
+		update_option( 'aifd_openai_key', 'sk-test' );
+		update_option( 'aifd_pinecone_key', 'pk' );
+		update_option( 'aifd_pinecone_host', 'https://idx.pinecone.io' );
+		$order = $this->make_blocked_order();
+		$this->respond_with( function ( $url ) {
+			if ( false !== strpos( $url, 'api.openai.com/v1/embeddings' ) ) {
+				return self::json_response( array( 'data' => array( array( 'embedding' => array( 0.1, 0.2 ) ) ) ) );
+			}
+			return self::json_response( array( 'upsertedCount' => 1 ) );
+		} );
+
+		$data  = $this->request( 'POST', '/order/' . $order->get_id() . '/confirm-fraud' )->get_data();
+		$notes = implode( "\n", wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ) );
+
+		$this->assertTrue( $data['pinecone_saved'], 'precondition: the pattern was saved' );
+		$this->assertSame( 'Confirmed as fraud. Pattern saved to Pinecone as context for AI checks on similar orders.', $data['message'] );
+		$this->assertStringContainsString( 'AI checks on similar orders see it as context; it does not change any score.', $notes );
+		$this->assertStringNotContainsString( 'faster', $data['message'] . $notes );
+	}
+
 	public function test_confirmed_pattern_sent_to_pinecone_carries_no_order_or_customer_detail() {
 		wp_set_current_user( $this->admin_id );
 		update_option( 'aifd_openai_key', 'sk-test' );
