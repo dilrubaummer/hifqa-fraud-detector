@@ -239,9 +239,9 @@ class HardeningTest extends TestCase {
 			'customer_ip_address' => '192.0.2.44',
 		) ) );
 
-		// Three tool turns and the closing reply: every message the model saw.
-		$this->assertCount( 4, $this->http_requests );
-		$this->assertStringContainsString( '"role":"tool"', $this->http_requests[3]['args']['body'], 'tool results were sent back' );
+		// Three tool turns, ending at the final tool call: every message the model saw.
+		$this->assertCount( 3, $this->http_requests );
+		$this->assertStringContainsString( '"role":"tool"', $this->http_requests[2]['args']['body'], 'tool results were sent back' );
 		foreach ( $this->http_requests as $request ) {
 			$body = $request['args']['body'];
 			$this->assertStringContainsString( 'example.com', $body );

@@ -128,8 +128,9 @@ abstract class TestCase extends WP_UnitTestCase {
 	}
 
 	/**
-	 * Fake an OpenAI agent. Each turn is a list of [ tool name, arguments ]; after
-	 * the last turn the model stops. The script starts over for the next order.
+	 * Fake an OpenAI agent. Each turn is a list of [ tool name, arguments ]. The
+	 * run ends at the calculate_final_risk call; the script starts over for the
+	 * next order.
 	 */
 	protected function openai_agent_replies_with( array $turns ) {
 		update_option( 'aifd_ai_provider', 'openai' );
@@ -150,10 +151,6 @@ abstract class TestCase extends WP_UnitTestCase {
 				'message'       => array( 'role' => 'assistant', 'content' => null, 'tool_calls' => $tool_calls ),
 			) ) );
 		}
-		$replies[] = array( 'choices' => array( array(
-			'finish_reason' => 'stop',
-			'message'       => array( 'role' => 'assistant', 'content' => 'Done.' ),
-		) ) );
 
 		$this->reply_in_turn( $replies );
 	}
@@ -173,7 +170,6 @@ abstract class TestCase extends WP_UnitTestCase {
 			}
 			$replies[] = array( 'stop_reason' => 'tool_use', 'content' => $blocks );
 		}
-		$replies[] = array( 'stop_reason' => 'end_turn', 'content' => array( array( 'type' => 'text', 'text' => 'Done.' ) ) );
 
 		$this->reply_in_turn( $replies );
 	}

@@ -215,7 +215,7 @@ class ProvidersTest extends TestCase {
 		$this->assertSame( 'ALLOW', $result['decision'] );
 		$this->assertSame( 'Matches card fraud pattern', $result['reason'] );
 		$this->assertSame( 'openai_function_calling', $result['source'] );
-		$this->assertSame( 2, $calls );
+		$this->assertSame( 1, $calls, 'the run ends at the final tool call, with no closing request' );
 	}
 
 	public function test_openai_agent_falls_back_on_http_error_without_leaking_the_key() {
@@ -256,6 +256,8 @@ class ProvidersTest extends TestCase {
 		$this->assertStringContainsString( 'without calling calculate_final_risk', $result['reason'] );
 		$this->assertNotEquals( self::VERDICT['risk_score'], $result['risk_score'], 'the model\'s own score is never used' );
 		$this->assertSame( 'api.anthropic.com', $this->requested_hosts()[0] );
+		$this->assertCount( 2, $this->http_requests, 'one extra round that requires the final tool, then it fails' );
+		$this->assertSame( array( 'type' => 'tool', 'name' => 'calculate_final_risk' ), $this->request_body( 1 )['tool_choice'] );
 	}
 
 	public function test_openai_agent_text_verdict_is_a_failed_call() {
@@ -272,6 +274,195 @@ class ProvidersTest extends TestCase {
 		$this->assertSame( 'fallback', $result['source'] );
 		$this->assertStringContainsString( 'without calling calculate_final_risk', $result['reason'] );
 		$this->assertInstanceOf( \WP_Error::class, aifd_normalize_ai_result( $result ), 'the caller treats it as a failure' );
+		$this->assertCount( 2, $this->http_requests, 'one extra round that requires the final tool, then it fails' );
+		$this->assertSame( self::OPENAI_FORCED, $this->request_body( 1 )['tool_choice'] );
+	}
+
+	// ── Requiring the final tool call ──────────────────
+
+	const OPENAI_FORCED = array(
+		'type'     => 'function',
+		'function' => array( 'name' => 'calculate_final_risk' ),
+	);
+
+	/**
+	 * The decoded JSON body of the nth request.
+	 */
+	private function request_body( $n ) {
+		return json_decode( $this->http_requests[ $n ]['args']['body'], true );
+	}
+
+	private static function openai_tool_reply( $name, array $args ) {
+		return self::json_response( array( 'choices' => array( array(
+			// A forced tool call comes back with finish_reason "stop".
+			'finish_reason' => 'stop',
+			'message'       => array(
+				'role'       => 'assistant',
+				'content'    => null,
+				'tool_calls' => array( array(
+					'id'       => 'call_' . $name,
+					'type'     => 'function',
+					'function' => array( 'name' => $name, 'arguments' => wp_json_encode( (object) $args ) ),
+				) ),
+			),
+		) ) ) );
+	}
+
+	private static function anthropic_tool_reply( $name, array $args ) {
+		return self::json_response( array(
+			'stop_reason' => 'tool_use',
+			'content'     => array( array( 'type' => 'tool_use', 'id' => 'toolu_' . $name, 'name' => $name, 'input' => (object) $args ) ),
+		) );
+	}
+
+	/**
+	 * Capture what the plugin writes to the WooCommerce log.
+	 */
+	private function spy_on_log() {
+		$spy = new class() extends \WC_Logger {
+			public $entries = array();
+			public function __construct() {
+				parent::__construct( array() );
+			}
+			public function log( $level, $message, $context = array() ) {
+				$this->entries[] = $message;
+			}
+		};
+		add_filter( 'woocommerce_logging_class', function () use ( $spy ) {
+			return $spy;
+		} );
+		return $spy;
+	}
+
+	public function test_openai_text_reply_gets_one_forced_round_then_a_valid_verdict() {
+		update_option( 'aifd_openai_key', 'sk-test' );
+		$this->respond_with( function ( $url, $args ) {
+			if ( empty( json_decode( $args['body'], true )['tool_choice'] ) ) {
+				return self::json_response( array( 'choices' => array( array(
+					'finish_reason' => 'stop',
+					'message'       => array( 'role' => 'assistant', 'content' => 'Looks fine to me.' ),
+				) ) ) );
+			}
+			return self::openai_tool_reply( 'calculate_final_risk', array( 'reasoning' => 'Disposable email' ) );
+		} );
+
+		$result = ( new AIFD_FunctionCalling( $this->agent_signals() ) )->run_openai();
+
+		$this->assertSame( 'openai_function_calling', $result['source'] );
+		$this->assertEquals( 11, $result['risk_score'] );
+		$this->assertSame( 'Disposable email', $result['reason'] );
+		$this->assertCount( 2, $this->http_requests );
+		$this->assertArrayNotHasKey( 'tool_choice', $this->request_body( 0 ), 'the first round is not forced' );
+		$this->assertSame( self::OPENAI_FORCED, $this->request_body( 1 )['tool_choice'] );
+
+		$messages = $this->request_body( 1 )['messages'];
+		$this->assertSame( array( 'role' => 'user', 'content' => AIFD_FunctionCalling::FINAL_ANSWER_PROMPT ), end( $messages ) );
+	}
+
+	public function test_anthropic_text_reply_gets_one_forced_round_then_a_valid_verdict() {
+		update_option( 'aifd_anthropic_key', 'ak-test' );
+		$this->respond_with( function ( $url, $args ) {
+			if ( empty( json_decode( $args['body'], true )['tool_choice'] ) ) {
+				return self::json_response( array(
+					'stop_reason' => 'end_turn',
+					'content'     => array( array( 'type' => 'text', 'text' => 'Looks fine to me.' ) ),
+				) );
+			}
+			return self::anthropic_tool_reply( 'calculate_final_risk', array( 'reasoning' => 'Disposable email' ) );
+		} );
+
+		$result = ( new AIFD_FunctionCalling( $this->agent_signals() ) )->run_anthropic();
+
+		$this->assertSame( 'anthropic_function_calling', $result['source'] );
+		$this->assertEquals( 11, $result['risk_score'] );
+		$this->assertSame( 'Disposable email', $result['reason'] );
+		$this->assertCount( 2, $this->http_requests );
+		$this->assertArrayNotHasKey( 'tool_choice', $this->request_body( 0 ) );
+		$this->assertSame( array( 'type' => 'tool', 'name' => 'calculate_final_risk' ), $this->request_body( 1 )['tool_choice'] );
+
+		// Turns still alternate: the forced round ends with the plugin's own user message.
+		$roles = wp_list_pluck( $this->request_body( 1 )['messages'], 'role' );
+		$this->assertSame( array( 'user', 'assistant', 'user' ), $roles );
+	}
+
+	/**
+	 * @dataProvider agent_providers
+	 */
+	public function test_last_allowed_round_requires_the_final_tool( $provider ) {
+		update_option( "aifd_{$provider}_key", 'test-key' );
+		$reply = array( self::class, "{$provider}_tool_reply" );
+
+		// A model that keeps checking and never answers on its own.
+		$this->respond_with( function ( $url, $args ) use ( $reply ) {
+			return empty( json_decode( $args['body'], true )['tool_choice'] )
+				? call_user_func( $reply, 'check_signal_weights', array() )
+				: call_user_func( $reply, 'calculate_final_risk', array( 'reasoning' => 'Out of rounds' ) );
+		} );
+
+		$agent  = new AIFD_FunctionCalling( $this->agent_signals() );
+		$result = 'openai' === $provider ? $agent->run_openai() : $agent->run_anthropic();
+
+		$this->assertSame( "{$provider}_function_calling", $result['source'], 'a valid verdict, not "Max iterations reached"' );
+		$this->assertSame( 'Out of rounds', $result['reason'] );
+		$this->assertCount( 10, $this->http_requests );
+		for ( $n = 0; $n < 9; $n++ ) {
+			$this->assertArrayNotHasKey( 'tool_choice', $this->request_body( $n ), "round {$n} is not forced" );
+		}
+		$this->assertArrayHasKey( 'tool_choice', $this->request_body( 9 ), 'the last round is' );
+	}
+
+	public function agent_providers() {
+		return array(
+			'OpenAI'    => array( 'openai' ),
+			'Anthropic' => array( 'anthropic' ),
+		);
+	}
+
+	public function test_forced_answer_before_the_checks_is_logged() {
+		$log = $this->spy_on_log();
+		update_option( 'aifd_openai_key', 'sk-test' );
+		$this->respond_with( function ( $url, $args ) {
+			if ( empty( json_decode( $args['body'], true )['tool_choice'] ) ) {
+				return self::json_response( array( 'choices' => array( array(
+					'finish_reason' => 'stop',
+					'message'       => array( 'role' => 'assistant', 'content' => 'Fine.' ),
+				) ) ) );
+			}
+			return self::openai_tool_reply( 'calculate_final_risk', array( 'reasoning' => 'x' ) );
+		} );
+
+		( new AIFD_FunctionCalling( $this->agent_signals() ) )->run_openai();
+
+		$entries = implode( "\n", $log->entries );
+		$this->assertStringContainsString( 'required to give its final answer before calling search_fraud_patterns and check_velocity', $entries );
+	}
+
+	public function test_a_full_run_that_answers_on_its_own_logs_no_forced_answer() {
+		$log = $this->spy_on_log();
+		$this->openai_agent_replies_with( $this->full_agent_run( 'ok' ) );
+
+		( new AIFD_FunctionCalling( $this->agent_signals() ) )->run_openai();
+
+		$this->assertStringNotContainsString( 'required to give its final answer', implode( "\n", $log->entries ) );
+	}
+
+	public function test_final_tool_runs_after_the_other_checks_in_the_same_turn() {
+		// Three orders from the agent's IP this hour: the velocity check finds them.
+		foreach ( array( 'a', 'b', 'c' ) as $who ) {
+			$this->make_order( array( 'billing_email' => "{$who}@example.org", 'customer_ip_address' => '203.0.113.5' ) );
+		}
+
+		// The model asks for its final answer first and the velocity check second.
+		$this->openai_agent_replies_with( array( array(
+			array( 'calculate_final_risk', array( 'reasoning' => 'Same IP, several orders' ) ),
+			array( 'check_velocity', array( 'window_minutes' => 60 ) ),
+		) ) );
+
+		$result = ( new AIFD_FunctionCalling( $this->agent_signals() ) )->run_openai();
+
+		$this->assertEquals( 10, $result['velocity_boost'], 'the velocity found in the same turn counts' );
+		$this->assertEquals( 21, $result['risk_score'], '11 local + 10 for velocity' );
+		$this->assertCount( 1, $this->http_requests );
 	}
 
 	public function test_anthropic_agent_verdict_comes_from_the_final_tool_call() {
@@ -282,7 +473,7 @@ class ProvidersTest extends TestCase {
 		$this->assertSame( 'anthropic_function_calling', $result['source'] );
 		$this->assertEquals( 11, $result['risk_score'], 'disposable_email alone scores 11; the claimed 99 is ignored' );
 		$this->assertSame( 'Disposable email on a first order', $result['reason'] );
-		$this->assertCount( 4, $this->http_requests );
+		$this->assertCount( 3, $this->http_requests, 'three tool turns; the run ends at the final tool call' );
 		$this->assertSame( array( 'api.anthropic.com' ), array_values( array_unique( $this->requested_hosts() ) ) );
 	}
 
@@ -402,7 +593,7 @@ class ProvidersTest extends TestCase {
 		$result                   = ( new AIFD_FunctionCalling( $signals ) )->run_openai();
 
 		$this->assertSame( 'openai_function_calling', $result['source'], 'precondition: the run completed' );
-		$this->assertCount( 4, $this->http_requests );
+		$this->assertCount( 3, $this->http_requests );
 		foreach ( $this->http_requests as $request ) {
 			$body = $request['args']['body'];
 			$this->assertStringContainsString( 'mailinator.com', $body );
