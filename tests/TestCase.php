@@ -72,13 +72,13 @@ abstract class TestCase extends WP_UnitTestCase {
 	 * calculate_final_risk with this reasoning. $claims are extra figures the
 	 * model sends along with it, which the store must ignore.
 	 */
-	protected function full_agent_run( $reasoning, array $claims = array() ) {
+	protected function full_agent_run( $reasoning, array $claims = array(), $velocity_window = 60 ) {
 		return array(
 			array(
 				array( 'check_signal_weights', array( 'include_reasons' => true ) ),
 				array( 'search_fraud_patterns', array() ),
 			),
-			array( array( 'check_velocity', array( 'window_minutes' => 60 ) ) ),
+			array( array( 'check_velocity', array( 'window_minutes' => $velocity_window ) ) ),
 			array( array( 'calculate_final_risk', array_merge( $claims, array( 'reasoning' => $reasoning ) ) ) ),
 		);
 	}

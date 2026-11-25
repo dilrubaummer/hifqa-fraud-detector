@@ -207,9 +207,9 @@ class ProvidersTest extends TestCase {
 		$result = ( new AIFD_FunctionCalling( $this->agent_signals() ) )->run_openai();
 
 		// The model claimed signal 30, a 0.95 pattern match and velocity risk. None of
-		// that was observed by a tool, so the score is the local one, calibrated (x2).
+		// that was observed by a tool, so the score is the local one.
 		$local = aifd_calculate_risk_score( $this->agent_signals() )['risk_score'];
-		$this->assertEquals( $local * 2, $result['risk_score'] );
+		$this->assertEquals( $local, $result['risk_score'] );
 		$this->assertEquals( 0, $result['pattern_boost'] );
 		$this->assertEquals( 0, $result['velocity_boost'] );
 		$this->assertSame( 'ALLOW', $result['decision'] );
@@ -280,7 +280,7 @@ class ProvidersTest extends TestCase {
 		$result = ( new AIFD_FunctionCalling( $this->agent_signals() ) )->run_anthropic();
 
 		$this->assertSame( 'anthropic_function_calling', $result['source'] );
-		$this->assertEquals( 22, $result['risk_score'], 'disposable_email alone: 11 local, ×2 calibration; the claimed 99 is ignored' );
+		$this->assertEquals( 11, $result['risk_score'], 'disposable_email alone scores 11; the claimed 99 is ignored' );
 		$this->assertSame( 'Disposable email on a first order', $result['reason'] );
 		$this->assertCount( 4, $this->http_requests );
 		$this->assertSame( array( 'api.anthropic.com' ), array_values( array_unique( $this->requested_hosts() ) ) );
@@ -309,11 +309,11 @@ class ProvidersTest extends TestCase {
 		$low  = $low->execute_tool( 'calculate_final_risk', array( 'reasoning' => 'weak match' ) );
 		$high = $high->execute_tool( 'calculate_final_risk', array( 'reasoning' => 'strong match' ) );
 
-		// Calibrated local score, plus 15 for a 0.80–0.89 match and nothing below 0.60.
-		$calibrated = $this->calibrated_agent_score();
+		// The local score, plus 15 for a 0.80–0.89 match and nothing below 0.60.
+		$local = $this->local_agent_score();
 
-		$this->assertEquals( $calibrated, $low['risk_score'] );
-		$this->assertEquals( $calibrated + 15, $high['risk_score'] );
+		$this->assertEquals( $local, $low['risk_score'] );
+		$this->assertEquals( $local + 15, $high['risk_score'] );
 		$this->assertSame( 'ALLOW', $low['decision'] );
 	}
 
@@ -328,14 +328,14 @@ class ProvidersTest extends TestCase {
 			'reasoning'     => 'x',
 		) );
 
-		$this->assertEquals( $this->calibrated_agent_score(), $result['risk_score'], 'Claimed figures must not move the score in either direction' );
+		$this->assertEquals( $this->local_agent_score(), $result['risk_score'], 'Claimed figures must not move the score in either direction' );
 	}
 
 	/**
 	 * Hard-coded on purpose, so a broken formula is caught: the other agent
 	 * score tests derive their expected value from the same code they test.
-	 * disposable_email alone is 0.25 / 2.27 = 11 locally; the agent's ×2
-	 * calibration makes it 22 (until that calibration is removed).
+	 * disposable_email alone is 0.25 / 2.27 = 11 locally, and with nothing
+	 * observed by the pattern or velocity tools the agent adds nothing to it.
 	 */
 	public function test_agent_score_for_disposable_email_alone_is_pinned() {
 		$this->assertEquals( 11, aifd_calculate_risk_score( $this->agent_signals() )['risk_score'] );
@@ -343,16 +343,15 @@ class ProvidersTest extends TestCase {
 		$agent  = new AIFD_FunctionCalling( $this->agent_signals(), array() );
 		$result = $agent->execute_tool( 'calculate_final_risk', array( 'reasoning' => 'pinned' ) );
 
-		$this->assertEquals( 22, $result['risk_score'] );
+		$this->assertEquals( 11, $result['risk_score'] );
 		$this->assertSame( 'ALLOW', $result['decision'] );
 	}
 
 	/**
-	 * The agent's score for agent_signals() with no pattern or velocity boost.
+	 * The agent's score for agent_signals() with no pattern or velocity boost: the local score.
 	 */
-	private function calibrated_agent_score() {
-		$local = aifd_calculate_risk_score( $this->agent_signals() )['risk_score'];
-		return max( $local, min( 80, round( $local * 2 ) ) );
+	private function local_agent_score() {
+		return aifd_calculate_risk_score( $this->agent_signals() )['risk_score'];
 	}
 
 	public function test_match_against_a_legitimate_pattern_does_not_raise_the_score() {

@@ -279,12 +279,6 @@ class AIFD_FunctionCalling {
             $reasoning = implode( '. ', $local['reasons'] );
         }
 
-        // Recalibrate signal score
-        // Max realistic score with most signals firing ≈ 40
-        // Rescale to 0-80 range so patterns and velocity add meaningful boost
-        // — but never below the local score itself.
-        $calibrated_signal = max( $signal_score, min( 80, round( $signal_score * 2 ) ) );
-
         // Boost score if strong Pinecone pattern match
         $pattern_boost = 0;
         if ( $pattern_score >= 0.90 ) {
@@ -300,8 +294,8 @@ class AIFD_FunctionCalling {
         // Boost if velocity suspicious
         $velocity_boost = $velocity_risk ? 10 : 0;
 
-        // Final score
-        $final_score = min( 100, $calibrated_signal + $pattern_boost + $velocity_boost );
+        // Final score: the local score plus only what the tools observed.
+        $final_score = min( 100, $signal_score + $pattern_boost + $velocity_boost );
         $verdict     = aifd_decision_for_score( $final_score );
 
         return array(
@@ -310,7 +304,6 @@ class AIFD_FunctionCalling {
             'decision'          => $verdict['decision'],
             'reason'            => $reasoning,
             'signal_score'      => $signal_score,
-            'calibrated_signal' => $calibrated_signal,
             'pattern_boost'     => $pattern_boost,
             'velocity_boost'    => $velocity_boost,
         );

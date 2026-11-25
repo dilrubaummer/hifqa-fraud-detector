@@ -252,7 +252,7 @@ function aifd_normalize_ai_result( $result ) {
     );
 
     // Score breakdown from the function-calling agent, kept for the log only.
-    foreach ( array( 'signal_score', 'calibrated_signal', 'pattern_boost', 'velocity_boost', 'pinecone_matches' ) as $key ) {
+    foreach ( array( 'signal_score', 'pattern_boost', 'velocity_boost', 'pinecone_matches' ) as $key ) {
         if ( isset( $result[ $key ] ) && is_numeric( $result[ $key ] ) ) {
             $verdict[ $key ] = (int) round( (float) $result[ $key ] );
         }
@@ -1625,7 +1625,6 @@ function aifd_log_order_with_ai( $order_id, $signals, $rule_result, $ai_result )
     if ( isset( $ai_result['pattern_boost'] ) ) {
         $log_entry .= "   Breakdown:\n";
         $log_entry .= "     Raw signal score:   " . ( $ai_result['signal_score']      ?? 0 ) . "/100\n";
-        $log_entry .= "     Calibrated signal:  " . ( $ai_result['calibrated_signal'] ?? 0 ) . "/100\n";
         $log_entry .= "     Pattern boost:      +" . ( $ai_result['pattern_boost']    ?? 0 ) . "\n";
         $log_entry .= "     Velocity boost:     +" . ( $ai_result['velocity_boost']   ?? 0 ) . "\n";
     }

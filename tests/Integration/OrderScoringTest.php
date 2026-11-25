@@ -162,13 +162,33 @@ class OrderScoringTest extends TestCase {
 
 	// ── AI tier (opt-in) ───────────────────────────────
 
-	public function test_ai_verdict_replaces_local_score_when_configured() {
-		$this->openai_agent_replies_with( $this->full_agent_run( 'AI: stolen card pattern' ) );
+	/**
+	 * Two earlier orders from this IP three hours ago, under other emails.
+	 *
+	 * Local rules miss them: card testing looks back one hour and velocity
+	 * counts by email. An agent that checks velocity over 24 hours sees three
+	 * orders from one IP — evidence a tool observed, worth +10.
+	 */
+	private function make_earlier_orders_from( $ip ) {
+		foreach ( array( 'first', 'second' ) as $who ) {
+			$order = $this->make_order( array(
+				'billing_email'       => "{$who}.buyer@example.net",
+				'customer_ip_address' => $ip,
+			) );
+			$order->set_date_created( time() - 3 * HOUR_IN_SECONDS );
+			$order->save();
+		}
+	}
 
-		$order = $this->make_order( $this->risky_order_props() );
+	public function test_ai_verdict_replaces_local_score_when_configured() {
+		$this->make_earlier_orders_from( '198.51.100.60' );
+		$this->openai_agent_replies_with( $this->full_agent_run( 'AI: stolen card pattern', array(), 1440 ) );
+
+		$order = $this->make_order( $this->risky_order_props( array( 'customer_ip_address' => '198.51.100.60' ) ) );
 		$local = aifd_calculate_risk_score( aifd_extract_signals( $order ) );
 
 		$this->assertSame( 'REVIEW', $local['decision'], 'precondition: local rules alone only flag it' );
+		$this->assertEquals( 10, (int) $order->get_meta( '_aifd_risk_score' ) - $local['risk_score'], 'raised by the velocity the tool observed' );
 		$this->assertSame( 'BLOCK', $order->get_meta( '_aifd_decision' ) );
 		$this->assertSame( 'openai_function_calling', $order->get_meta( '_aifd_provider' ) );
 		$this->assertSame( 'on-hold', $order->get_status() );
@@ -210,6 +230,9 @@ class OrderScoringTest extends TestCase {
 	 * @dataProvider provider_routes
 	 */
 	public function test_selected_provider_is_the_one_called( $provider, $options, $expected_host, $reply, $expected_source ) {
+		// Gives the Anthropic agent velocity evidence to find; see make_earlier_orders_from().
+		$this->make_earlier_orders_from( '198.51.100.60' );
+
 		update_option( 'aifd_ai_provider', $provider );
 		foreach ( $options as $key => $value ) {
 			update_option( $key, $value );
@@ -217,7 +240,7 @@ class OrderScoringTest extends TestCase {
 
 		if ( 'anthropic' === $provider ) {
 			// Tool-call path: the verdict comes from the agent's final tool call.
-			$this->anthropic_agent_replies_with( $this->full_agent_run( 'AI verdict' ) );
+			$this->anthropic_agent_replies_with( $this->full_agent_run( 'AI verdict', array(), 1440 ) );
 		} else {
 			$this->respond_with( function () use ( $reply ) {
 				return self::json_response( $reply );
@@ -225,8 +248,9 @@ class OrderScoringTest extends TestCase {
 		}
 
 		// Local rules alone flag this order for review; each verdict below raises it.
-		$order = $this->make_order( $this->risky_order_props() );
+		$order = $this->make_order( $this->risky_order_props( array( 'customer_ip_address' => '198.51.100.60' ) ) );
 
+		$this->assertSame( 'REVIEW', aifd_calculate_risk_score( aifd_extract_signals( $order ) )['decision'], 'precondition: local rules alone only flag it' );
 		$this->assertSame( array( $expected_host ), array_values( array_unique( $this->requested_hosts() ) ), 'only the selected provider is contacted' );
 		$this->assertSame( $expected_source, $order->get_meta( '_aifd_provider' ), "{$provider} verdict should be applied" );
 		$this->assertSame( 'BLOCK', $order->get_meta( '_aifd_decision' ), "{$provider} verdict should be applied" );
