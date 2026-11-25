@@ -541,7 +541,7 @@ function aifd_extract_signals( $order ) {
     $high_velocity        = ( count( $orders_last_day ) >= 3 );
     $new_account          = aifd_is_new_account( $customer_id );
     $multiple_addresses   = aifd_has_multiple_addresses( $customer_email );
-    $chargeback_history   = aifd_has_chargeback_history( $customer_email, $customer_ip );
+    $chargeback_history   = aifd_has_chargeback_history( $customer_email );
 
     return array(
         // Order info
@@ -678,45 +678,46 @@ function aifd_is_risky_country_combo( $billing, $shipping ) {
 }
 
 /**
- * Check if customer has chargeback history
+ * Whether an earlier order with this email is known fraud.
+ *
+ * Only a verdict a human gave counts: the merchant confirmed the order as
+ * fraud, or a gateway integration reports a dispute on it. The plugin's own
+ * earlier decisions and the wording of order notes do not — a cancelled,
+ * unpaid order is not a chargeback.
  */
-function aifd_has_chargeback_history( $email, $ip ) {
+function aifd_has_chargeback_history( $email ) {
+
+    if ( '' === (string) $email ) {
+        return false;
+    }
 
     $previous_orders = wc_get_orders( array(
         'type'          => 'shop_order', // exclude refunds, which lack order fields
         'billing_email' => $email,
         'limit'         => 20,
-        'status'        => array( 'refunded', 'cancelled', 'failed' ),
         'return'        => 'objects',
     ));
 
-    if ( empty( $previous_orders ) ) {
-        return false;
-    }
-
     foreach ( $previous_orders as $order ) {
 
-        // Check if previously blocked by our plugin
-        $previous_decision = $order->get_meta( '_aifd_decision' );
-        if ( $previous_decision === 'BLOCK' ) {
+        if ( 'CONFIRMED_FRAUD' === $order->get_meta( '_aifd_review_status' ) ) {
             return true;
         }
 
-        // Check order notes for chargeback keywords
-        $notes = wc_get_order_notes( array(
-            'order_id' => $order->get_id(),
-            'type'     => 'internal',
-        ));
-
-        foreach ( $notes as $note ) {
-            $note_lower = strtolower( $note->content );
-            if (
-                strpos( $note_lower, 'chargeback' ) !== false ||
-                strpos( $note_lower, 'dispute' )    !== false ||
-                strpos( $note_lower, 'fraud' )      !== false
-            ) {
-                return true;
-            }
+        /**
+         * Filters whether an earlier order counts as disputed.
+         *
+         * The plugin ships no gateway-specific dispute checks yet. A payment
+         * gateway integration can return true for an order that has an open
+         * or lost dispute (chargeback).
+         *
+         * @since 1.1.0
+         *
+         * @param bool     $has_dispute Whether the order is disputed. Default false.
+         * @param WC_Order $order       An earlier order with the same billing email.
+         */
+        if ( apply_filters( 'aifd_order_has_dispute', false, $order ) ) {
+            return true;
         }
 
     }
@@ -860,7 +861,7 @@ function aifd_calculate_risk_score( $signals ) {
         'high_velocity'          => __( 'High order velocity from same customer', 'hifqa-fraud-detector' ),
         'address_mismatch'       => __( 'Billing and shipping country mismatch', 'hifqa-fraud-detector' ),
         'freight_forwarder'      => __( 'Shipping to freight forwarder address', 'hifqa-fraud-detector' ),
-        'chargeback_history'     => __( 'Customer has previous chargeback history', 'hifqa-fraud-detector' ),
+        'chargeback_history'     => __( 'Previous confirmed fraud', 'hifqa-fraud-detector' ),
         'first_order_high_value' => __( 'High value first order from new customer', 'hifqa-fraud-detector' ),
         'ip_proxy_vpn'           => __( 'Order placed via VPN or proxy', 'hifqa-fraud-detector' ),
         'risky_country_combo'    => __( 'High-risk billing/shipping country combination', 'hifqa-fraud-detector' ),

@@ -69,24 +69,34 @@ class OrderScoringTest extends TestCase {
 		$this->assertCount( 1, $blocked_mails );
 	}
 
-	public function test_previous_blocked_order_counts_as_chargeback_history() {
+	/**
+	 * @dataProvider earlier_blocks
+	 */
+	public function test_an_earlier_block_alone_is_not_previous_confirmed_fraud( $decision ) {
 		$first = $this->make_order( array( 'billing_email' => 'repeat@example.com' ) );
-		$first->update_meta_data( '_aifd_decision', 'BLOCK' );
+		$first->update_meta_data( '_aifd_decision', $decision );
 		$first->set_status( 'cancelled' );
 		$first->save();
 
 		$second = $this->make_order( array( 'billing_email' => 'repeat@example.com' ) );
-		$this->assertContains( 'chargeback_history', $second->get_meta( '_aifd_fired_signals' ) );
+		$this->assertNotContains( 'chargeback_history', (array) $second->get_meta( '_aifd_fired_signals' ) );
 	}
 
-	public function test_dispute_note_on_refunded_order_counts_as_chargeback_history() {
+	public function earlier_blocks() {
+		return array(
+			'blocked by the plugin'     => array( 'BLOCK' ),
+			'blocked by the merchant'   => array( 'BLOCKED' ),
+		);
+	}
+
+	public function test_dispute_wording_in_a_note_is_not_previous_confirmed_fraud() {
 		$first = $this->make_order( array( 'billing_email' => 'disputer@example.com' ) );
 		$first->set_status( 'refunded' );
 		$first->save();
 		$first->add_order_note( 'Customer opened a dispute with the bank' );
 
 		$second = $this->make_order( array( 'billing_email' => 'disputer@example.com' ) );
-		$this->assertContains( 'chargeback_history', $second->get_meta( '_aifd_fired_signals' ) );
+		$this->assertNotContains( 'chargeback_history', (array) $second->get_meta( '_aifd_fired_signals' ) );
 	}
 
 	// ── Block enforcement ──────────────────────────────

@@ -381,7 +381,7 @@ Embedded → 1536d vector (OpenAI) or 768d (Gemini) etc
 
 | Signal | Weight | Description |
 |--------|--------|-------------|
-| chargeback_history | 0.22 | Previous chargeback or blocked order |
+| chargeback_history | 0.22 | Previous order the merchant confirmed as fraud |
 | first_order_high_value | 0.15 | New customer, order > $500 |
 | ip_proxy_vpn | 0.12 | Order placed via VPN or proxy |
 | risky_country_combo | 0.12 | Known high-fraud billing/shipping pair |

@@ -169,7 +169,7 @@ Merchant feedback → Pinecone learns
 ### Tier 2 — Strong
 | Signal | Weight |
 |--------|--------|
-| Chargeback History | 0.22 |
+| Previous Confirmed Fraud | 0.22 |
 | First Order High Value | 0.15 |
 | IP Proxy / VPN | 0.12 |
 | Risky Country Combo | 0.12 |

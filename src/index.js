@@ -191,7 +191,7 @@ const WeightsPanel = ({ weights, onReset, resetting }) => {
         high_velocity:          __( 'High Velocity', 'hifqa-fraud-detector' ),
         address_mismatch:       __( 'Address Mismatch', 'hifqa-fraud-detector' ),
         freight_forwarder:      __( 'Freight Forwarder', 'hifqa-fraud-detector' ),
-        chargeback_history:     __( 'Chargeback History', 'hifqa-fraud-detector' ),
+        chargeback_history:     __( 'Previous Confirmed Fraud', 'hifqa-fraud-detector' ),
         first_order_high_value: __( 'First Order High Value', 'hifqa-fraud-detector' ),
         ip_proxy_vpn:           __( 'IP Proxy / VPN', 'hifqa-fraud-detector' ),
         risky_country_combo:    __( 'Risky Country Combo', 'hifqa-fraud-detector' ),

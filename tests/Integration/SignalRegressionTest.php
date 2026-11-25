@@ -70,4 +70,73 @@ class SignalRegressionTest extends TestCase {
 
 		$this->assertNotContains( 'high_velocity', (array) $order->get_meta( '_aifd_fired_signals' ) );
 	}
+
+	// ── chargeback_history ("Previous confirmed fraud") ──
+
+	public function test_abandoned_order_is_not_previous_confirmed_fraud() {
+		$customer = $this->make_customer();
+
+		// Scored on creation, so it carries the plugin's own "FRAUD CHECK PASSED" note.
+		$first = $this->make_order( array( 'customer_id' => $customer, 'billing_email' => 'once@example.com' ) );
+		$first->update_status( 'cancelled' ); // an unpaid order cancelled by WooCommerce
+
+		$order = $this->make_order( array( 'customer_id' => $customer, 'billing_email' => 'once@example.com' ) );
+
+		$this->assertNotContains( 'chargeback_history', (array) $order->get_meta( '_aifd_fired_signals' ) );
+		$this->assertSame( 'ALLOW', $order->get_meta( '_aifd_decision' ) );
+	}
+
+	public function test_order_the_merchant_confirmed_as_fraud_is_previous_confirmed_fraud() {
+		$first = $this->make_order( array( 'billing_email' => 'fraudster@example.com' ) );
+		$first->update_meta_data( '_aifd_review_status', 'CONFIRMED_FRAUD' );
+		$first->save();
+
+		$order = $this->make_order( array( 'billing_email' => 'fraudster@example.com' ) );
+
+		$this->assertContains( 'chargeback_history', (array) $order->get_meta( '_aifd_fired_signals' ) );
+		$this->assertStringContainsString( 'Previous confirmed fraud', $order->get_meta( '_aifd_reason' ) );
+	}
+
+	public function test_false_positive_review_is_not_previous_confirmed_fraud() {
+		$first = $this->make_order( array( 'billing_email' => 'cleared@example.com' ) );
+		$first->update_meta_data( '_aifd_review_status', 'FALSE_POSITIVE' );
+		$first->save();
+
+		$order = $this->make_order( array( 'billing_email' => 'cleared@example.com' ) );
+
+		$this->assertNotContains( 'chargeback_history', (array) $order->get_meta( '_aifd_fired_signals' ) );
+	}
+
+	public function test_dispute_filter_marks_previous_confirmed_fraud() {
+		$first = $this->make_order( array( 'billing_email' => 'disputed@example.com' ) );
+
+		$seen     = array();
+		$disputed = function ( $has_dispute, $order ) use ( $first, &$seen ) {
+			$seen[] = $order->get_id();
+			return $has_dispute || $order->get_id() === $first->get_id();
+		};
+		add_filter( 'aifd_order_has_dispute', $disputed, 10, 2 );
+
+		$order = $this->make_order( array( 'billing_email' => 'disputed@example.com' ) );
+
+		remove_filter( 'aifd_order_has_dispute', $disputed, 10 );
+
+		$this->assertContains( $first->get_id(), $seen );
+		$this->assertContains( 'chargeback_history', (array) $order->get_meta( '_aifd_fired_signals' ) );
+	}
+
+	public function test_dispute_filter_only_sees_orders_with_the_same_email() {
+		$other = $this->make_order( array( 'billing_email' => 'someone-else@example.com' ) );
+
+		$disputed = function ( $has_dispute, $order ) use ( $other ) {
+			return $has_dispute || $order->get_id() === $other->get_id();
+		};
+		add_filter( 'aifd_order_has_dispute', $disputed, 10, 2 );
+
+		$order = $this->make_order( array( 'billing_email' => 'innocent@example.com' ) );
+
+		remove_filter( 'aifd_order_has_dispute', $disputed, 10 );
+
+		$this->assertNotContains( 'chargeback_history', (array) $order->get_meta( '_aifd_fired_signals' ) );
+	}
 }
