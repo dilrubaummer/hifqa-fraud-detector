@@ -1,587 +1,352 @@
 [
   {
     "id": "seed_001",
-    "pattern": "disposable_email address_mismatch high_value no_phone new_customer cod_payment",
+    "pattern": "disposable_email address_mismatch first_order_high_value no_phone_number cod_payment",
     "fraud_type": "card_fraud",
-    "confidence": 0.97,
-    "times_seen": 1250,
-    "source": "seed_dataset",
-    "description": "Classic stolen card pattern — disposable email, different billing and shipping countries, high value first order, no phone, cash on delivery"
+    "source": "synthetic_seed",
+    "description": "Card fraud: disposable email, billing and shipping countries differ, high value first order, no phone number, cash on delivery"
   },
   {
     "id": "seed_002",
-    "pattern": "card_testing_pattern multiple_small_orders same_ip high_velocity guest_checkout",
+    "pattern": "card_testing_pattern high_velocity guest_checkout",
     "fraud_type": "card_testing",
-    "confidence": 0.99,
-    "times_seen": 890,
-    "source": "seed_dataset",
-    "description": "Bot testing stolen cards — many small orders from same IP in short window"
+    "source": "synthetic_seed",
+    "description": "Card testing: card testing pattern with repeated orders from the same customer, guest checkout"
   },
   {
     "id": "seed_003",
-    "pattern": "freight_forwarder address_mismatch guest_checkout prepaid_card new_customer",
+    "pattern": "address_mismatch freight_forwarder payment_method_risk guest_checkout",
     "fraud_type": "reshipping_fraud",
-    "confidence": 0.95,
-    "times_seen": 445,
-    "source": "seed_dataset",
-    "description": "Reshipping scam — goods shipped to freight forwarder for onward export"
+    "source": "synthetic_seed",
+    "description": "Reshipping: billing and shipping countries differ, freight forwarder address, risky payment method, guest checkout"
   },
   {
     "id": "seed_004",
-    "pattern": "vpn_proxy new_account high_value cod_payment risky_country_combo",
+    "pattern": "risky_country_combo order_total_anomaly new_account cod_payment",
     "fraud_type": "identity_fraud",
-    "confidence": 0.88,
-    "times_seen": 672,
-    "source": "seed_dataset",
-    "description": "Identity fraud using VPN to mask location — new account, high value, risky country combination"
+    "source": "synthetic_seed",
+    "description": "Identity fraud: high-risk country combination, order far above store average, brand-new account, cash on delivery"
   },
   {
     "id": "seed_005",
-    "pattern": "multiple_addresses same_email different_names guest_checkout high_velocity",
+    "pattern": "high_velocity mismatched_names multiple_addresses guest_checkout",
     "fraud_type": "account_takeover",
-    "confidence": 0.91,
-    "times_seen": 334,
-    "source": "seed_dataset",
-    "description": "Account takeover — same email used with multiple names and addresses rapidly"
+    "source": "synthetic_seed",
+    "description": "Account misuse: repeated orders, billing and shipping names differ, several shipping addresses for one email, guest checkout"
   },
   {
     "id": "seed_006",
-    "pattern": "disposable_email high_value guest_checkout no_phone odd_hours",
+    "pattern": "disposable_email no_phone_number order_total_anomaly odd_hours guest_checkout",
     "fraud_type": "card_fraud",
-    "confidence": 0.93,
-    "times_seen": 567,
-    "source": "seed_dataset",
-    "description": "Night time card fraud — disposable email, high value order placed between midnight and 5am"
-  },
-  {
-    "id": "seed_007",
-    "pattern": "card_testing_pattern high_velocity same_email different_cards guest_checkout",
-    "fraud_type": "card_testing",
-    "confidence": 0.98,
-    "times_seen": 423,
-    "source": "seed_dataset",
-    "description": "Testing multiple stolen cards on same email — rapid succession of small orders"
+    "source": "synthetic_seed",
+    "description": "Card fraud: disposable email, no phone number, order far above store average, placed between midnight and 5am, guest checkout"
   },
   {
     "id": "seed_008",
-    "pattern": "address_mismatch mismatched_names high_value new_customer no_phone",
+    "pattern": "address_mismatch first_order_high_value mismatched_names no_phone_number",
     "fraud_type": "card_fraud",
-    "confidence": 0.89,
-    "times_seen": 789,
-    "source": "seed_dataset",
-    "description": "Stolen card with mismatched names — billing and shipping names differ, different countries"
+    "source": "synthetic_seed",
+    "description": "Card fraud: billing and shipping countries and names differ, high value first order, no phone number"
   },
   {
     "id": "seed_009",
-    "pattern": "freight_forwarder high_value electronics_category new_customer disposable_email",
+    "pattern": "disposable_email freight_forwarder first_order_high_value",
     "fraud_type": "reshipping_fraud",
-    "confidence": 0.96,
-    "times_seen": 312,
-    "source": "seed_dataset",
-    "description": "Electronics reshipping fraud — high value electronics sent to freight forwarder"
+    "source": "synthetic_seed",
+    "description": "Reshipping: disposable email, freight forwarder address, high value first order"
   },
   {
     "id": "seed_010",
-    "pattern": "vpn_proxy disposable_email address_mismatch high_value odd_hours",
+    "pattern": "disposable_email address_mismatch order_total_anomaly odd_hours",
     "fraud_type": "card_fraud",
-    "confidence": 0.94,
-    "times_seen": 445,
-    "source": "seed_dataset",
-    "description": "VPN masked card fraud — proxy used to hide real location, disposable email, odd hours"
+    "source": "synthetic_seed",
+    "description": "Card fraud: disposable email, billing and shipping countries differ, order far above store average, placed between midnight and 5am"
   },
   {
     "id": "seed_011",
-    "pattern": "same_ip multiple_accounts high_velocity different_emails card_testing_pattern",
+    "pattern": "card_testing_pattern high_velocity",
     "fraud_type": "card_testing",
-    "confidence": 0.99,
-    "times_seen": 234,
-    "source": "seed_dataset",
-    "description": "Automated card testing — single IP creating multiple accounts to test cards"
+    "source": "synthetic_seed",
+    "description": "Card testing: card testing pattern with repeated orders from the same customer"
   },
   {
     "id": "seed_012",
-    "pattern": "chargeback_history same_email new_address high_value guest_checkout",
+    "pattern": "chargeback_history order_total_anomaly guest_checkout",
     "fraud_type": "chargeback_fraud",
-    "confidence": 0.92,
-    "times_seen": 567,
-    "source": "seed_dataset",
-    "description": "Serial chargeback fraudster — same email seen in chargeback history, new address"
+    "source": "synthetic_seed",
+    "description": "Repeat fraud: previous confirmed fraud for this email, order far above store average, guest checkout"
   },
   {
     "id": "seed_013",
-    "pattern": "disposable_email multiple_addresses high_velocity new_customer no_phone",
+    "pattern": "disposable_email high_velocity no_phone_number multiple_addresses",
     "fraud_type": "card_fraud",
-    "confidence": 0.90,
-    "times_seen": 678,
-    "source": "seed_dataset",
-    "description": "Rapid address cycling — disposable email used with multiple shipping addresses quickly"
+    "source": "synthetic_seed",
+    "description": "Card fraud: disposable email, repeated orders, no phone number, several shipping addresses for one email"
   },
   {
     "id": "seed_014",
-    "pattern": "risky_country_combo address_mismatch high_value prepaid_card guest_checkout",
+    "pattern": "address_mismatch risky_country_combo payment_method_risk order_total_anomaly guest_checkout",
     "fraud_type": "card_fraud",
-    "confidence": 0.93,
-    "times_seen": 445,
-    "source": "seed_dataset",
-    "description": "High risk country pair with prepaid card — known fraud route between two countries"
+    "source": "synthetic_seed",
+    "description": "Card fraud: billing and shipping countries differ, high-risk country combination, risky payment method, order far above store average, guest checkout"
   },
   {
     "id": "seed_015",
-    "pattern": "new_account high_value odd_hours disposable_email no_phone address_mismatch",
+    "pattern": "disposable_email address_mismatch no_phone_number order_total_anomaly odd_hours new_account",
     "fraud_type": "card_fraud",
-    "confidence": 0.96,
-    "times_seen": 389,
-    "source": "seed_dataset",
-    "description": "New account midnight fraud — account created and immediately used for high value purchase at odd hours"
+    "source": "synthetic_seed",
+    "description": "Card fraud: brand-new account, disposable email, billing and shipping countries differ, no phone number, order far above store average, placed between midnight and 5am"
   },
   {
     "id": "seed_016",
-    "pattern": "multiple_addresses freight_forwarder same_email high_velocity different_names",
+    "pattern": "high_velocity freight_forwarder mismatched_names multiple_addresses",
     "fraud_type": "reshipping_fraud",
-    "confidence": 0.94,
-    "times_seen": 223,
-    "source": "seed_dataset",
-    "description": "Organized reshipping ring — same email, multiple freight forwarder addresses, different names"
+    "source": "synthetic_seed",
+    "description": "Reshipping: repeated orders, freight forwarder address, billing and shipping names differ, several shipping addresses for one email"
   },
   {
     "id": "seed_017",
-    "pattern": "card_testing_pattern odd_hours same_ip small_orders high_velocity",
+    "pattern": "card_testing_pattern high_velocity odd_hours",
     "fraud_type": "card_testing",
-    "confidence": 0.99,
-    "times_seen": 1120,
-    "source": "seed_dataset",
-    "description": "Automated overnight card testing — bot runs between midnight and 5am placing small test orders"
+    "source": "synthetic_seed",
+    "description": "Card testing: card testing pattern with repeated orders, placed between midnight and 5am"
   },
   {
     "id": "seed_018",
-    "pattern": "chargeback_history disposable_email high_value new_address guest_checkout",
+    "pattern": "disposable_email chargeback_history order_total_anomaly guest_checkout",
     "fraud_type": "chargeback_fraud",
-    "confidence": 0.91,
-    "times_seen": 334,
-    "source": "seed_dataset",
-    "description": "Chargeback fraud with new disposable email — same person cycling emails to avoid detection"
+    "source": "synthetic_seed",
+    "description": "Repeat fraud: disposable email, previous confirmed fraud for this email, order far above store average, guest checkout"
   },
   {
     "id": "seed_019",
-    "pattern": "vpn_proxy address_mismatch risky_country_combo no_phone new_customer",
+    "pattern": "address_mismatch risky_country_combo no_phone_number",
     "fraud_type": "identity_fraud",
-    "confidence": 0.87,
-    "times_seen": 445,
-    "source": "seed_dataset",
-    "description": "VPN identity fraud — proxy hides real country, ships to different country, no contact info"
+    "source": "synthetic_seed",
+    "description": "Identity fraud: billing and shipping countries differ, high-risk country combination, no phone number"
   },
   {
     "id": "seed_020",
-    "pattern": "disposable_email freight_forwarder no_phone new_customer prepaid_card",
+    "pattern": "disposable_email freight_forwarder no_phone_number payment_method_risk",
     "fraud_type": "reshipping_fraud",
-    "confidence": 0.95,
-    "times_seen": 289,
-    "source": "seed_dataset",
-    "description": "Reshipping with prepaid card — untraceable payment, disposable email, freight forwarder destination"
+    "source": "synthetic_seed",
+    "description": "Reshipping: disposable email, freight forwarder address, no phone number, risky payment method"
   },
   {
     "id": "seed_021",
-    "pattern": "high_velocity same_billing_address different_emails multiple_cards guest_checkout",
+    "pattern": "high_velocity guest_checkout",
     "fraud_type": "card_testing",
-    "confidence": 0.97,
-    "times_seen": 234,
-    "source": "seed_dataset",
-    "description": "Address-based card testing — multiple cards tested using same billing address but different emails"
+    "source": "synthetic_seed",
+    "description": "Card testing: repeated orders from the same customer, guest checkout"
   },
   {
     "id": "seed_022",
-    "pattern": "order_total_anomaly new_customer no_phone address_mismatch disposable_email",
+    "pattern": "disposable_email address_mismatch no_phone_number order_total_anomaly",
     "fraud_type": "card_fraud",
-    "confidence": 0.92,
-    "times_seen": 567,
-    "source": "seed_dataset",
-    "description": "Anomalous order value — first order is 5x above store average, multiple supporting signals"
+    "source": "synthetic_seed",
+    "description": "Card fraud: disposable email, billing and shipping countries differ, no phone number, order far above store average"
   },
   {
     "id": "seed_023",
-    "pattern": "multiple_accounts same_device new_account high_velocity card_testing_pattern",
+    "pattern": "card_testing_pattern high_velocity new_account",
     "fraud_type": "account_takeover",
-    "confidence": 0.98,
-    "times_seen": 167,
-    "source": "seed_dataset",
-    "description": "Device fingerprint fraud — same device creating multiple accounts rapidly"
+    "source": "synthetic_seed",
+    "description": "Card testing: card testing pattern with repeated orders, brand-new account"
   },
   {
     "id": "seed_024",
-    "pattern": "chargeback_history high_value guest_checkout no_phone odd_hours",
+    "pattern": "chargeback_history no_phone_number order_total_anomaly odd_hours guest_checkout",
     "fraud_type": "chargeback_fraud",
-    "confidence": 0.90,
-    "times_seen": 445,
-    "source": "seed_dataset",
-    "description": "Habitual chargeback fraud — known pattern of high value guest orders followed by disputes"
+    "source": "synthetic_seed",
+    "description": "Repeat fraud: previous confirmed fraud for this email, no phone number, order far above store average, placed between midnight and 5am, guest checkout"
   },
   {
     "id": "seed_025",
-    "pattern": "risky_country_combo freight_forwarder high_value no_phone disposable_email",
+    "pattern": "disposable_email freight_forwarder risky_country_combo no_phone_number order_total_anomaly",
     "fraud_type": "reshipping_fraud",
-    "confidence": 0.96,
-    "times_seen": 189,
-    "source": "seed_dataset",
-    "description": "International reshipping ring — high risk country combination with freight forwarder"
+    "source": "synthetic_seed",
+    "description": "Reshipping: disposable email, freight forwarder address, high-risk country combination, no phone number, order far above store average"
   },
   {
     "id": "seed_026",
-    "pattern": "address_mismatch mismatched_names prepaid_card no_phone guest_checkout",
+    "pattern": "address_mismatch mismatched_names no_phone_number payment_method_risk guest_checkout",
     "fraud_type": "card_fraud",
-    "confidence": 0.88,
-    "times_seen": 678,
-    "source": "seed_dataset",
-    "description": "Prepaid card fraud — untraceable card, mismatched names, international shipping"
+    "source": "synthetic_seed",
+    "description": "Card fraud: billing and shipping countries and names differ, no phone number, risky payment method, guest checkout"
   },
   {
     "id": "seed_027",
-    "pattern": "high_velocity same_email multiple_orders high_value different_addresses",
+    "pattern": "high_velocity order_total_anomaly",
     "fraud_type": "card_fraud",
-    "confidence": 0.91,
-    "times_seen": 334,
-    "source": "seed_dataset",
-    "description": "Rapid bulk ordering — same email placing multiple high value orders to different addresses quickly"
-  },
-  {
-    "id": "seed_028",
-    "pattern": "vpn_proxy card_testing_pattern odd_hours small_orders high_velocity",
-    "fraud_type": "card_testing",
-    "confidence": 0.99,
-    "times_seen": 890,
-    "source": "seed_dataset",
-    "description": "VPN-masked automated card testing — bot using proxy to test cards overnight"
+    "source": "synthetic_seed",
+    "description": "Card fraud: repeated orders from the same customer, order far above store average"
   },
   {
     "id": "seed_029",
-    "pattern": "new_account disposable_email high_value freight_forwarder no_phone",
+    "pattern": "disposable_email freight_forwarder no_phone_number order_total_anomaly new_account",
     "fraud_type": "reshipping_fraud",
-    "confidence": 0.94,
-    "times_seen": 223,
-    "source": "seed_dataset",
-    "description": "Fresh account reshipping — newly created account immediately ordering high value to freight forwarder"
+    "source": "synthetic_seed",
+    "description": "Reshipping: brand-new account, disposable email, freight forwarder address, no phone number, order far above store average"
   },
   {
     "id": "seed_030",
-    "pattern": "chargeback_history multiple_addresses same_ip different_emails high_value",
+    "pattern": "chargeback_history multiple_addresses order_total_anomaly",
     "fraud_type": "chargeback_fraud",
-    "confidence": 0.93,
-    "times_seen": 289,
-    "source": "seed_dataset",
-    "description": "Organized chargeback fraud — same IP cycling through multiple emails and addresses"
+    "source": "synthetic_seed",
+    "description": "Repeat fraud: previous confirmed fraud for this email, several shipping addresses for one email, order far above store average"
   },
   {
     "id": "seed_031",
-    "pattern": "disposable_email new_customer high_value prepaid_card odd_hours",
+    "pattern": "disposable_email first_order_high_value payment_method_risk odd_hours",
     "fraud_type": "card_fraud",
-    "confidence": 0.91,
-    "times_seen": 456,
-    "source": "seed_dataset",
-    "description": "Prepaid card night fraud — untraceable card used overnight for high value first purchase"
+    "source": "synthetic_seed",
+    "description": "Card fraud: disposable email, high value first order, risky payment method, placed between midnight and 5am"
   },
   {
     "id": "seed_032",
-    "pattern": "address_mismatch high_value new_account vpn_proxy no_phone",
+    "pattern": "address_mismatch no_phone_number order_total_anomaly new_account",
     "fraud_type": "identity_fraud",
-    "confidence": 0.89,
-    "times_seen": 567,
-    "source": "seed_dataset",
-    "description": "VPN identity fraud with new account — proxy hides location, fresh account, high value"
+    "source": "synthetic_seed",
+    "description": "Identity fraud: brand-new account, billing and shipping countries differ, no phone number, order far above store average"
   },
   {
     "id": "seed_033",
-    "pattern": "card_testing_pattern same_ip disposable_email small_orders new_customer",
+    "pattern": "card_testing_pattern disposable_email",
     "fraud_type": "card_testing",
-    "confidence": 0.98,
-    "times_seen": 1340,
-    "source": "seed_dataset",
-    "description": "Standard card testing — small amounts, same IP, disposable email, testing card validity"
+    "source": "synthetic_seed",
+    "description": "Card testing: card testing pattern, disposable email"
   },
   {
     "id": "seed_034",
-    "pattern": "freight_forwarder mismatched_names no_phone high_value prepaid_card",
+    "pattern": "freight_forwarder mismatched_names no_phone_number payment_method_risk order_total_anomaly",
     "fraud_type": "reshipping_fraud",
-    "confidence": 0.93,
-    "times_seen": 178,
-    "source": "seed_dataset",
-    "description": "Professional reshipping fraud — freight forwarder, mismatched names, untraceable payment"
+    "source": "synthetic_seed",
+    "description": "Reshipping: freight forwarder address, billing and shipping names differ, no phone number, risky payment method, order far above store average"
   },
   {
     "id": "seed_035",
-    "pattern": "multiple_accounts same_device disposable_email high_velocity guest_checkout",
+    "pattern": "disposable_email high_velocity guest_checkout",
     "fraud_type": "account_takeover",
-    "confidence": 0.96,
-    "times_seen": 234,
-    "source": "seed_dataset",
-    "description": "Device-based account farming — same device rapidly creating guest accounts"
+    "source": "synthetic_seed",
+    "description": "Account misuse: disposable email, repeated orders, guest checkout"
   },
   {
     "id": "seed_036",
-    "pattern": "risky_country_combo new_customer high_value no_phone odd_hours",
+    "pattern": "first_order_high_value risky_country_combo no_phone_number odd_hours",
     "fraud_type": "card_fraud",
-    "confidence": 0.87,
-    "times_seen": 445,
-    "source": "seed_dataset",
-    "description": "High risk country first order — new customer from known fraud country combination placing overnight order"
+    "source": "synthetic_seed",
+    "description": "Card fraud: high value first order, high-risk country combination, no phone number, placed between midnight and 5am"
   },
   {
     "id": "seed_037",
-    "pattern": "chargeback_history new_address disposable_email high_value odd_hours",
+    "pattern": "disposable_email chargeback_history order_total_anomaly odd_hours",
     "fraud_type": "chargeback_fraud",
-    "confidence": 0.92,
-    "times_seen": 312,
-    "source": "seed_dataset",
-    "description": "Chargeback fraud cycling addresses — known fraudster using new address and disposable email"
+    "source": "synthetic_seed",
+    "description": "Repeat fraud: disposable email, previous confirmed fraud for this email, order far above store average, placed between midnight and 5am"
   },
   {
     "id": "seed_038",
-    "pattern": "vpn_proxy freight_forwarder high_value new_customer no_phone",
+    "pattern": "freight_forwarder first_order_high_value no_phone_number",
     "fraud_type": "reshipping_fraud",
-    "confidence": 0.95,
-    "times_seen": 156,
-    "source": "seed_dataset",
-    "description": "VPN-masked reshipping — proxy hides real location, ships to freight forwarder"
-  },
-  {
-    "id": "seed_039",
-    "pattern": "high_velocity multiple_orders same_card different_addresses guest_checkout",
-    "fraud_type": "card_fraud",
-    "confidence": 0.90,
-    "times_seen": 389,
-    "source": "seed_dataset",
-    "description": "Card velocity fraud — same card used rapidly for multiple orders to different addresses"
+    "source": "synthetic_seed",
+    "description": "Reshipping: freight forwarder address, high value first order, no phone number"
   },
   {
     "id": "seed_040",
-    "pattern": "disposable_email risky_country_combo guest_checkout no_phone order_total_anomaly",
+    "pattern": "disposable_email risky_country_combo no_phone_number order_total_anomaly guest_checkout",
     "fraud_type": "card_fraud",
-    "confidence": 0.91,
-    "times_seen": 467,
-    "source": "seed_dataset",
-    "description": "Anomalous risky country order — far above average order value from high risk country pair"
+    "source": "synthetic_seed",
+    "description": "Card fraud: disposable email, high-risk country combination, no phone number, order far above store average, guest checkout"
   },
   {
     "id": "seed_041",
-    "pattern": "card_testing_pattern new_account high_velocity guest_checkout odd_hours",
+    "pattern": "card_testing_pattern high_velocity odd_hours guest_checkout new_account",
     "fraud_type": "card_testing",
-    "confidence": 0.98,
-    "times_seen": 789,
-    "source": "seed_dataset",
-    "description": "New account overnight card testing — fresh account created specifically for testing stolen cards"
+    "source": "synthetic_seed",
+    "description": "Card testing: brand-new account, card testing pattern with repeated orders, placed between midnight and 5am, guest checkout"
   },
   {
     "id": "seed_042",
-    "pattern": "multiple_addresses no_phone new_customer order_total_anomaly guest_checkout",
+    "pattern": "no_phone_number multiple_addresses order_total_anomaly guest_checkout",
     "fraud_type": "card_fraud",
-    "confidence": 0.86,
-    "times_seen": 534,
-    "source": "seed_dataset",
-    "description": "Address cycling with anomalous value — multiple shipping addresses tested with large orders"
+    "source": "synthetic_seed",
+    "description": "Card fraud: no phone number, several shipping addresses for one email, order far above store average, guest checkout"
   },
   {
     "id": "seed_043",
-    "pattern": "freight_forwarder address_mismatch odd_hours high_value new_customer",
+    "pattern": "address_mismatch freight_forwarder first_order_high_value odd_hours",
     "fraud_type": "reshipping_fraud",
-    "confidence": 0.94,
-    "times_seen": 201,
-    "source": "seed_dataset",
-    "description": "Overnight reshipping order — freight forwarder destination, international, placed at odd hours"
+    "source": "synthetic_seed",
+    "description": "Reshipping: billing and shipping countries differ, freight forwarder address, high value first order, placed between midnight and 5am"
   },
   {
     "id": "seed_044",
-    "pattern": "vpn_proxy chargeback_history high_value new_address disposable_email",
+    "pattern": "disposable_email chargeback_history order_total_anomaly",
     "fraud_type": "chargeback_fraud",
-    "confidence": 0.93,
-    "times_seen": 267,
-    "source": "seed_dataset",
-    "description": "VPN-masked repeat chargeback — known chargeback fraudster hiding behind proxy with new details"
+    "source": "synthetic_seed",
+    "description": "Repeat fraud: disposable email, previous confirmed fraud for this email, order far above store average"
   },
   {
     "id": "seed_045",
-    "pattern": "same_ip multiple_cards card_testing_pattern guest_checkout small_orders",
+    "pattern": "card_testing_pattern guest_checkout",
     "fraud_type": "card_testing",
-    "confidence": 0.99,
-    "times_seen": 1560,
-    "source": "seed_dataset",
-    "description": "Most common card testing pattern — same IP testing multiple stolen cards with small amounts"
+    "source": "synthetic_seed",
+    "description": "Card testing: card testing pattern, guest checkout"
   },
   {
     "id": "seed_046",
-    "pattern": "mismatched_names address_mismatch prepaid_card high_value new_customer",
+    "pattern": "address_mismatch first_order_high_value mismatched_names payment_method_risk",
     "fraud_type": "card_fraud",
-    "confidence": 0.90,
-    "times_seen": 445,
-    "source": "seed_dataset",
-    "description": "Identity mismatch fraud — billing and shipping names differ, prepaid card, international"
+    "source": "synthetic_seed",
+    "description": "Card fraud: billing and shipping countries and names differ, high value first order, risky payment method"
   },
   {
     "id": "seed_047",
-    "pattern": "new_account multiple_addresses high_velocity disposable_email guest_checkout",
+    "pattern": "disposable_email high_velocity multiple_addresses guest_checkout new_account",
     "fraud_type": "account_takeover",
-    "confidence": 0.92,
-    "times_seen": 189,
-    "source": "seed_dataset",
-    "description": "Rapid account cycling — fresh accounts with disposable emails testing multiple addresses quickly"
+    "source": "synthetic_seed",
+    "description": "Account misuse: brand-new account, disposable email, repeated orders, several shipping addresses for one email, guest checkout"
   },
   {
     "id": "seed_048",
-    "pattern": "order_total_anomaly address_mismatch no_phone guest_checkout new_customer",
+    "pattern": "address_mismatch no_phone_number order_total_anomaly guest_checkout",
     "fraud_type": "card_fraud",
-    "confidence": 0.88,
-    "times_seen": 378,
-    "source": "seed_dataset",
-    "description": "Anomalous first order — massive order far above store average from new guest customer internationally"
+    "source": "synthetic_seed",
+    "description": "Card fraud: billing and shipping countries differ, no phone number, order far above store average, guest checkout"
   },
   {
     "id": "seed_049",
-    "pattern": "risky_country_combo vpn_proxy card_testing_pattern high_velocity odd_hours",
+    "pattern": "card_testing_pattern high_velocity risky_country_combo odd_hours",
     "fraud_type": "card_testing",
-    "confidence": 0.99,
-    "times_seen": 678,
-    "source": "seed_dataset",
-    "description": "International automated card testing — bot from high risk country using VPN overnight"
+    "source": "synthetic_seed",
+    "description": "Card testing: card testing pattern with repeated orders, high-risk country combination, placed between midnight and 5am"
   },
   {
     "id": "seed_050",
-    "pattern": "chargeback_history freight_forwarder high_value prepaid_card disposable_email",
+    "pattern": "disposable_email freight_forwarder chargeback_history payment_method_risk order_total_anomaly",
     "fraud_type": "chargeback_fraud",
-    "confidence": 0.96,
-    "times_seen": 234,
-    "source": "seed_dataset",
-    "description": "High confidence repeat fraud — chargeback history combined with reshipping and untraceable payment"
-  },
-  {
-    "id": "legit_001",
-    "pattern": "registered_customer same_billing_shipping verified_email phone_provided normal_hours low_value",
-    "fraud_type": "legitimate",
-    "confidence": 0.98,
-    "times_seen": 45000,
-    "source": "seed_dataset",
-    "description": "Standard legitimate order — returning registered customer, matching addresses, verified email, phone provided, normal business hours"
-  },
-  {
-    "id": "legit_002",
-    "pattern": "returning_customer multiple_previous_orders same_address verified_email phone_provided",
-    "fraud_type": "legitimate",
-    "confidence": 0.99,
-    "times_seen": 38000,
-    "source": "seed_dataset",
-    "description": "High trust returning customer — 5+ previous orders, consistent address, verified contact details"
-  },
-  {
-    "id": "legit_003",
-    "pattern": "registered_customer same_billing_shipping work_email phone_provided normal_hours medium_value",
-    "fraud_type": "legitimate",
-    "confidence": 0.97,
-    "times_seen": 29000,
-    "source": "seed_dataset",
-    "description": "Business customer — work email domain, registered account, matching addresses, medium value order"
-  },
-  {
-    "id": "legit_004",
-    "pattern": "registered_customer gift_shipping_different phone_provided verified_email low_value normal_hours",
-    "fraud_type": "legitimate",
-    "confidence": 0.94,
-    "times_seen": 12000,
-    "source": "seed_dataset",
-    "description": "Legitimate gift order — different shipping address but registered customer with phone, verified email, low value"
-  },
-  {
-    "id": "legit_005",
-    "pattern": "new_customer same_billing_shipping verified_email phone_provided normal_hours low_value card_payment",
-    "fraud_type": "legitimate",
-    "confidence": 0.91,
-    "times_seen": 18000,
-    "source": "seed_dataset",
-    "description": "Legitimate new customer — first order but all signals clean, low value, card payment, matching addresses"
-  },
-  {
-    "id": "legit_006",
-    "pattern": "returning_customer address_change phone_provided verified_email normal_hours low_value",
-    "fraud_type": "legitimate",
-    "confidence": 0.93,
-    "times_seen": 8500,
-    "source": "seed_dataset",
-    "description": "Returning customer who moved — new address but long history, phone provided, verified email"
+    "source": "synthetic_seed",
+    "description": "Repeat fraud: previous confirmed fraud for this email, disposable email, freight forwarder address, risky payment method, order far above store average"
   },
   {
     "id": "legit_007",
-    "pattern": "registered_customer same_billing_shipping verified_email phone_provided odd_hours low_value",
+    "pattern": "odd_hours",
     "fraud_type": "legitimate",
-    "confidence": 0.90,
-    "times_seen": 7200,
-    "source": "seed_dataset",
-    "description": "Legitimate late night order — registered customer with history placing small order at night, all other signals clean"
+    "source": "synthetic_seed",
+    "description": "Legitimate: placed between midnight and 5am, no other risk signal"
   },
   {
     "id": "legit_008",
-    "pattern": "registered_customer same_billing_shipping verified_email phone_provided normal_hours high_value multiple_previous_orders",
+    "pattern": "order_total_anomaly",
     "fraud_type": "legitimate",
-    "confidence": 0.96,
-    "times_seen": 4500,
-    "source": "seed_dataset",
-    "description": "High value legitimate order — returning customer with strong history, high value but consistent with purchase pattern"
-  },
-  {
-    "id": "legit_009",
-    "pattern": "new_customer same_billing_shipping verified_email phone_provided normal_hours medium_value card_payment local_country",
-    "fraud_type": "legitimate",
-    "confidence": 0.89,
-    "times_seen": 22000,
-    "source": "seed_dataset",
-    "description": "Legitimate new customer domestic order — local country, matching addresses, all contact details provided"
-  },
-  {
-    "id": "legit_010",
-    "pattern": "registered_customer international_shipping verified_email phone_provided normal_hours low_value multiple_previous_orders",
-    "fraud_type": "legitimate",
-    "confidence": 0.92,
-    "times_seen": 6800,
-    "source": "seed_dataset",
-    "description": "Legitimate international order — returning customer shipping abroad, low value, verified contact, strong purchase history"
-  },
-  {
-    "id": "legit_011",
-    "pattern": "registered_customer same_billing_shipping corporate_email phone_provided normal_hours high_value purchase_order",
-    "fraud_type": "legitimate",
-    "confidence": 0.97,
-    "times_seen": 3200,
-    "source": "seed_dataset",
-    "description": "Legitimate corporate bulk order — corporate email domain, registered account, high value consistent with B2B purchasing"
-  },
-  {
-    "id": "legit_012",
-    "pattern": "returning_customer multiple_previous_orders card_payment same_billing_shipping phone_provided normal_hours",
-    "fraud_type": "legitimate",
-    "confidence": 0.98,
-    "times_seen": 31000,
-    "source": "seed_dataset",
-    "description": "Standard repeat customer — consistent card payment, same address always, phone on file, normal hours"
+    "source": "synthetic_seed",
+    "description": "Legitimate: order far above store average, no other risk signal"
   },
   {
     "id": "legit_013",
-    "pattern": "new_customer same_billing_shipping verified_email phone_provided paypal_payment normal_hours low_value",
+    "pattern": "paypal_payment",
     "fraud_type": "legitimate",
-    "confidence": 0.92,
-    "times_seen": 15000,
-    "source": "seed_dataset",
-    "description": "Legitimate PayPal new customer — PayPal provides buyer verification, matching addresses, low value first order"
-  },
-  {
-    "id": "legit_014",
-    "pattern": "registered_customer gift_registry_shipping verified_email phone_provided normal_hours medium_value",
-    "fraud_type": "legitimate",
-    "confidence": 0.93,
-    "times_seen": 5400,
-    "source": "seed_dataset",
-    "description": "Gift registry order — registered customer sending to registry address, normal value, all contact details present"
-  },
-  {
-    "id": "legit_015",
-    "pattern": "returning_customer subscription_renewal same_billing_shipping verified_email phone_provided",
-    "fraud_type": "legitimate",
-    "confidence": 0.99,
-    "times_seen": 28000,
-    "source": "seed_dataset",
-    "description": "Subscription renewal — recurring customer, consistent details, automatic renewal pattern, highest trust signal"
+    "source": "synthetic_seed",
+    "description": "Legitimate: PayPal payment, no risk signal"
   }
 ]

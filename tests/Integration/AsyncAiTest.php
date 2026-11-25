@@ -150,6 +150,42 @@ class AsyncAiTest extends TestCase {
 		$this->assertSame( 1, (int) get_option( 'aifd_total_review' ) );
 	}
 
+	/**
+	 * Pattern scoring is paused in 1.1.0. Before, a 0.97 fraud match added 20
+	 * points and this order went from 31 (ALLOW) to 51 (REVIEW).
+	 */
+	public function test_a_strong_fraud_pattern_match_no_longer_raises_the_score() {
+		update_option( 'aifd_pinecone_key', 'pk' );
+		update_option( 'aifd_pinecone_host', 'https://idx.pinecone.io' );
+		$this->openai_agent_replies_with( $this->full_agent_run( 'Close to a known fraud pattern' ) );
+
+		$agent = $this->http_responder;
+		$this->respond_with( function ( $url, $args ) use ( $agent ) {
+			if ( false !== strpos( $url, 'api.openai.com/v1/embeddings' ) ) {
+				return self::json_response( array( 'data' => array( array( 'embedding' => array( 0.1 ) ) ) ) );
+			}
+			if ( false !== strpos( $url, 'pinecone.io' ) ) {
+				return self::json_response( array( 'matches' => array( array(
+					'id'       => 'seed_001',
+					'score'    => 0.97,
+					'metadata' => array( 'fraud_type' => 'card_fraud', 'source' => 'synthetic_seed', 'description' => 'Card fraud' ),
+				) ) ) );
+			}
+			return call_user_func( $agent, $url, $args );
+		} );
+
+		$order = $this->make_order( $this->borderline_allow_props() );
+		$this->assertSame( 31, (int) $order->get_meta( '_aifd_risk_score' ), 'precondition: inside the band' );
+
+		$this->run_queued_ai();
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertSame( 'done', $order->get_meta( '_aifd_ai_status' ), 'precondition: the AI check ran' );
+		$this->assertContains( 'idx.pinecone.io', $this->requested_hosts(), 'precondition: the pattern was searched' );
+		$this->assertSame( 31, (int) $order->get_meta( '_aifd_risk_score' ) );
+		$this->assertSame( 'ALLOW', $order->get_meta( '_aifd_decision' ) );
+	}
+
 	public function test_ai_can_raise_a_review_to_block_and_hold_the_order() {
 		$this->ai_replies_with( array( 'risk_score' => 85, 'decision' => 'BLOCK', 'reason' => 'Stolen card pattern' ) );
 

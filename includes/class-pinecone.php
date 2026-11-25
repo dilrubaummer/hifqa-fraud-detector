@@ -204,7 +204,9 @@ class AIFD_Pinecone {
     }
 
     /**
-     * Delete a vector by ID
+     * Delete vectors by ID
+     *
+     * @param string|string[] $id One ID or a list of IDs.
      */
     public function delete( $id, $namespace = '' ) {
 
@@ -212,7 +214,7 @@ class AIFD_Pinecone {
             return false;
         }
 
-        $body = array( 'ids' => array( $id ) );
+        $body = array( 'ids' => array_values( (array) $id ) );
 
         if ( ! empty( $namespace ) ) {
             $body['namespace'] = $namespace;

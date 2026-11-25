@@ -490,22 +490,24 @@ class ProvidersTest extends TestCase {
 		);
 	}
 
-	public function test_final_risk_tool_scales_with_pattern_similarity() {
+	public function test_final_risk_tool_ignores_pattern_similarity_while_pattern_scoring_is_paused() {
 		$low = new AIFD_FunctionCalling( $this->agent_signals(), array( $this->pattern_match( 0.5 ) ) );
 		$low->execute_tool( 'search_fraud_patterns', array() );
 
-		$high = new AIFD_FunctionCalling( $this->agent_signals(), array( $this->pattern_match( 0.85 ) ) );
+		$high = new AIFD_FunctionCalling( $this->agent_signals(), array( $this->pattern_match( 0.99 ) ) );
 		$high->execute_tool( 'search_fraud_patterns', array() );
 
 		$low  = $low->execute_tool( 'calculate_final_risk', array( 'reasoning' => 'weak match' ) );
 		$high = $high->execute_tool( 'calculate_final_risk', array( 'reasoning' => 'strong match' ) );
 
-		// The local score, plus 15 for a 0.80–0.89 match and nothing below 0.60.
+		// Before 1.1.0 a 0.90+ match added 20. Now no match adds anything.
 		$local = $this->local_agent_score();
 
 		$this->assertEquals( $local, $low['risk_score'] );
-		$this->assertEquals( $local + 15, $high['risk_score'] );
+		$this->assertEquals( $local, $high['risk_score'] );
+		$this->assertEquals( 0, $high['pattern_boost'] );
 		$this->assertSame( 'ALLOW', $low['decision'] );
+		$this->assertSame( 'ALLOW', $high['decision'] );
 	}
 
 	public function test_final_risk_tool_uses_observed_similarity_not_the_models_claim() {
@@ -726,15 +728,81 @@ class ProvidersTest extends TestCase {
 			return self::json_response( array( 'upsertedCount' => 1 ) );
 		} );
 
-		$result = ( new \AIFD_Seed_Loader() )->load_seeds( 60, 3 );
+		$result = ( new \AIFD_Seed_Loader() )->load_seeds( 45, 3 );
 
 		$this->assertTrue( $result['success'] );
 		$this->assertSame( 3, $result['loaded'] );
-		$this->assertSame( 63, $result['next_offset'] );
+		$this->assertSame( 48, $result['next_offset'] );
 		$this->assertFalse( $result['done'] );
-		$this->assertSame( 65, $result['total'] );
+		$this->assertSame( 50, $result['total'] );
 
-		$this->assertTrue( ( new \AIFD_Seed_Loader() )->load_seeds( 63, 3 )['done'] );
+		$this->assertTrue( ( new \AIFD_Seed_Loader() )->load_seeds( 48, 3 )['done'] );
+	}
+
+	private function seed_loader_responds() {
+		update_option( 'aifd_openai_key', 'sk-test' );
+		update_option( 'aifd_pinecone_key', 'pk' );
+		update_option( 'aifd_pinecone_host', 'https://idx.pinecone.io' );
+		$this->respond_with( function ( $url ) {
+			if ( false !== strpos( $url, '/embeddings' ) ) {
+				return self::json_response( array( 'data' => array( array( 'embedding' => array( 0.1 ) ) ) ) );
+			}
+			return self::json_response( array() );
+		} );
+	}
+
+	private function requests_to( $path ) {
+		return array_values( array_filter( $this->http_requests, function ( $r ) use ( $path ) {
+			return false !== strpos( $r['url'], $path );
+		} ) );
+	}
+
+	public function test_seed_loader_deletes_retired_seeds_on_the_first_batch_only() {
+		$this->seed_loader_responds();
+
+		( new \AIFD_Seed_Loader() )->load_seeds( 0, 2 );
+		$deletes = $this->requests_to( '/vectors/delete' );
+
+		$this->assertCount( 1, $deletes );
+		$this->assertSame( 'https://idx.pinecone.io/vectors/delete', $deletes[0]['url'] );
+		$body = json_decode( $deletes[0]['args']['body'], true );
+		$this->assertSame( \AIFD_Seed_Loader::RETIRED_SEED_IDS, $body['ids'] );
+		$this->assertCount( 15, $body['ids'] );
+		$this->assertSame( 'merchant_1_openai', $body['namespace'] );
+
+		$this->http_requests = array();
+		( new \AIFD_Seed_Loader() )->load_seeds( 10, 2 );
+		$this->assertCount( 0, $this->requests_to( '/vectors/delete' ), 'Later batches do not delete again' );
+	}
+
+	public function test_seed_loader_carries_on_when_the_delete_fails() {
+		$this->seed_loader_responds();
+		$this->respond_with( function ( $url ) {
+			if ( false !== strpos( $url, '/vectors/delete' ) ) {
+				return self::json_response( array( 'message' => 'nope' ), 500 );
+			}
+			if ( false !== strpos( $url, '/embeddings' ) ) {
+				return self::json_response( array( 'data' => array( array( 'embedding' => array( 0.1 ) ) ) ) );
+			}
+			return self::json_response( array() );
+		} );
+
+		$result = ( new \AIFD_Seed_Loader() )->load_seeds( 0, 2 );
+
+		$this->assertTrue( $result['success'] );
+		$this->assertSame( 2, $result['loaded'] );
+	}
+
+	public function test_seed_loader_sends_no_made_up_counts() {
+		$this->seed_loader_responds();
+
+		( new \AIFD_Seed_Loader() )->load_seeds( 0, 1 );
+		$upsert   = json_decode( $this->requests_to( '/vectors/upsert' )[0]['args']['body'], true );
+		$metadata = $upsert['vectors'][0]['metadata'];
+
+		$this->assertSame( 'seed_001', $upsert['vectors'][0]['id'] );
+		$this->assertSame( array( 'pattern', 'fraud_type', 'source', 'description', 'provider' ), array_keys( $metadata ) );
+		$this->assertSame( 'synthetic_seed', $metadata['source'] );
 	}
 
 	public function test_seed_loader_explains_a_missing_voyage_key_without_any_request() {
@@ -765,20 +833,96 @@ class ProvidersTest extends TestCase {
 		$this->assertStringContainsString( '401', $result['message'] );
 	}
 
-	public function test_seed_file_has_65_well_formed_patterns() {
+	public function test_seed_file_has_50_well_formed_synthetic_patterns() {
 		$patterns = json_decode( file_get_contents( AIFD_PATH . 'data/seed-patterns.json' ), true );
 
-		$this->assertCount( 65, $patterns );
+		$this->assertCount( 50, $patterns );
 		$legit = array_filter( $patterns, function ( $p ) {
 			return 'legitimate' === $p['fraud_type'];
 		} );
-		$this->assertCount( 15, $legit );
+		$this->assertCount( 3, $legit );
 
 		foreach ( $patterns as $p ) {
-			foreach ( array( 'id', 'pattern', 'fraud_type', 'confidence', 'times_seen', 'source', 'description' ) as $key ) {
-				$this->assertArrayHasKey( $key, $p, "Seed {$p['id']} missing {$key}" );
-			}
+			$this->assertSame( array( 'id', 'pattern', 'fraud_type', 'source', 'description' ), array_keys( $p ), "Seed {$p['id']} has exactly these fields, with no made-up counts" );
+			$this->assertSame( 'synthetic_seed', $p['source'] );
+			$this->assertNotSame( '', $p['description'] );
 		}
-		$this->assertCount( 65, array_unique( wp_list_pluck( $patterns, 'id' ) ), 'Seed ids are unique' );
+		$this->assertCount( 50, array_unique( wp_list_pluck( $patterns, 'id' ) ), 'Seed ids are unique' );
+		$this->assertSame( array(), array_intersect( wp_list_pluck( $patterns, 'id' ), \AIFD_Seed_Loader::RETIRED_SEED_IDS ), 'Retired ids are not loaded again' );
+	}
+
+	/**
+	 * Each seed must be text this plugin can produce for a real order: rebuild
+	 * it from its own tokens with the runtime builder and get the same string.
+	 */
+	public function test_every_seed_uses_the_runtime_pattern_vocabulary() {
+		$patterns = json_decode( file_get_contents( AIFD_PATH . 'data/seed-patterns.json' ), true );
+		$pinecone = new AIFD_Pinecone();
+		$seen     = array();
+
+		foreach ( $patterns as $p ) {
+			$signals = array();
+			foreach ( explode( ' ', $p['pattern'] ) as $token ) {
+				if ( preg_match( '/^([a-z0-9-]+)_payment$/', $token, $m ) ) {
+					$signals['payment_method'] = $m[1];
+				} else {
+					$signals[ $token ] = true;
+				}
+			}
+
+			$this->assertSame( $p['pattern'], $pinecone->build_pattern_text( $signals ), "Seed {$p['id']} uses a token or order the plugin never produces" );
+
+			$key = $p['fraud_type'] . '|' . $p['pattern'];
+			$this->assertArrayNotHasKey( $key, $seen, "Seed {$p['id']} duplicates another seed" );
+			$seen[ $key ] = true;
+		}
+	}
+
+	public function test_pattern_context_summary_prints_no_counts() {
+		update_option( 'aifd_openai_key', 'sk-test' );
+		update_option( 'aifd_pinecone_key', 'pk' );
+		update_option( 'aifd_pinecone_host', 'https://idx.pinecone.io' );
+		$this->respond_with( function ( $url ) {
+			if ( false !== strpos( $url, '/embeddings' ) ) {
+				return self::json_response( array( 'data' => array( array( 'embedding' => array( 0.1 ) ) ) ) );
+			}
+			// Metadata as an index loaded by 1.0.0 still holds it.
+			return self::json_response( array( 'matches' => array(
+				array( 'id' => 'seed_001', 'score' => 0.93, 'metadata' => array( 'fraud_type' => 'card_fraud', 'times_seen' => 1250, 'confidence' => 0.97, 'source' => 'seed_dataset', 'description' => 'Card fraud' ) ),
+				array( 'id' => 'legit_007', 'score' => 0.81, 'metadata' => array( 'fraud_type' => 'legitimate', 'times_seen' => 2100, 'confidence' => 0.88, 'source' => 'synthetic_seed' ) ),
+			) ) );
+		} );
+
+		$context = aifd_get_pinecone_context( $this->agent_signals() );
+		$summary = $context['context_summary'];
+
+		$this->assertStringContainsString( 'card_fraud (similarity: 0.93, source: seed_dataset)', $summary );
+		$this->assertStringContainsString( 'legitimate pattern (similarity: 0.81, source: synthetic_seed)', $summary );
+		foreach ( array( '1250', '2100', '0.97', '0.88', 'seen', 'confidence' ) as $count ) {
+			$this->assertStringNotContainsString( $count, $summary );
+		}
+		$this->assertArrayNotHasKey( 'times_seen', $context['fraud_matches'][0] );
+		$this->assertArrayNotHasKey( 'confidence', $context['legit_matches'][0] );
+	}
+
+	public function test_search_tool_passes_no_counts_to_the_model() {
+		$match                           = $this->pattern_match( 0.9 );
+		$match['metadata']['times_seen'] = 1250;
+		$match['metadata']['confidence'] = 0.97;
+		$match['metadata']['source']     = 'synthetic_seed';
+
+		$agent  = new AIFD_FunctionCalling( $this->agent_signals(), array( $match ) );
+		$result = $agent->execute_tool( 'search_fraud_patterns', array() );
+
+		$this->assertSame( array( 'similarity', 'fraud_type', 'description', 'source' ), array_keys( $result['top_match'] ) );
+		$this->assertSame( 'synthetic_seed', $result['top_match']['source'] );
+	}
+
+	public function test_search_tool_description_says_seeds_are_synthetic() {
+		$agent = new AIFD_FunctionCalling( $this->agent_signals() );
+		$tools = wp_list_pluck( wp_list_pluck( $agent->get_tools(), 'function' ), 'description', 'name' );
+
+		$this->assertStringContainsString( 'synthetic_seed', $tools['search_fraud_patterns'] );
+		$this->assertStringNotContainsString( 'historically confirmed', $tools['search_fraud_patterns'] );
 	}
 }

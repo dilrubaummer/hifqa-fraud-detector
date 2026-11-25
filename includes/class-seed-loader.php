@@ -10,6 +10,18 @@ class AIFD_Seed_Loader {
      */
     const BATCH_SIZE = 10;
 
+    /**
+     * Seeds removed in 1.1.0: legitimate seeds whose tokens the plugin never
+     * produces, and duplicates left once tokens matched the runtime names.
+     * They are deleted from the index so their old made-up counts go too.
+     */
+    const RETIRED_SEED_IDS = array(
+        'seed_007', 'seed_028', 'seed_039',
+        'legit_001', 'legit_002', 'legit_003', 'legit_004', 'legit_005',
+        'legit_006', 'legit_009', 'legit_010', 'legit_011', 'legit_012',
+        'legit_014', 'legit_015',
+    );
+
     private $pinecone;
     private $embeddings;
 
@@ -43,7 +55,7 @@ class AIFD_Seed_Loader {
             );
         }
 
-        // Say why up front rather than failing 65 times — and never embed with another provider instead.
+        // Say why up front rather than failing once per pattern — and never embed with another provider instead.
         $problem = $this->embeddings->get_setup_problem( $provider );
 
         if ( '' !== $problem ) {
@@ -82,6 +94,11 @@ class AIFD_Seed_Loader {
         $failed     = 0;
         $last_error = '';
 
+        // Once per load, on the first batch. A failure here does not stop the load.
+        if ( 0 === $offset ) {
+            $this->pinecone->delete( self::RETIRED_SEED_IDS, $namespace );
+        }
+
         foreach ( $batch as $pattern ) {
 
             if ( empty( $pattern['id'] ) || empty( $pattern['pattern'] ) ) {
@@ -105,9 +122,7 @@ class AIFD_Seed_Loader {
                 array(
                     'pattern'     => $pattern['pattern'],
                     'fraud_type'  => $pattern['fraud_type'] ?? 'unknown',
-                    'confidence'  => $pattern['confidence'] ?? 0,
-                    'times_seen'  => $pattern['times_seen'] ?? 0,
-                    'source'      => $pattern['source'] ?? 'seed',
+                    'source'      => $pattern['source'] ?? 'synthetic_seed',
                     'description' => $pattern['description'] ?? '',
                     'provider'    => $provider,
                 ),

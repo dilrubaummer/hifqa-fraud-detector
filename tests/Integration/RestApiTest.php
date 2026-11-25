@@ -242,6 +242,20 @@ class RestApiTest extends TestCase {
 		$this->assertSame( 900.0, $stats['confirmed_fraud_value'] );
 	}
 
+	public function test_confirming_the_same_order_twice_stores_one_local_pattern() {
+		wp_set_current_user( $this->admin_id );
+		$other = $this->make_blocked_order();
+		$order = $this->make_blocked_order();
+
+		$this->confirm( $other );
+		$this->confirm( $order );
+		$this->confirm( $order );
+
+		$patterns = get_option( 'aifd_confirmed_patterns' );
+		$this->assertCount( 2, $patterns, 'One entry per confirmed order' );
+		$this->assertSame( array( $other->get_id(), $order->get_id() ), wp_list_pluck( $patterns, 'order_id' ) );
+	}
+
 	public function test_a_confirmed_order_overridden_later_no_longer_counts() {
 		wp_set_current_user( $this->admin_id );
 		$order = $this->make_blocked_order();

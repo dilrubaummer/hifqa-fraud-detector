@@ -274,8 +274,11 @@ function aifd_confirm_fraud( $request ) {
     );
     $order->save();
 
-    // Keep the pattern locally so it can be re-embedded if the provider changes
-    $confirmed_patterns   = get_option( 'aifd_confirmed_patterns', array() );
+    // Keep the pattern locally so it can be re-embedded if the provider changes.
+    // One entry per order: confirming again replaces it instead of adding a copy.
+    $confirmed_patterns   = array_values( array_filter( (array) get_option( 'aifd_confirmed_patterns', array() ), function ( $entry ) use ( $order_id ) {
+        return (int) ( $entry['order_id'] ?? 0 ) !== (int) $order_id;
+    } ) );
     $fired_signals        = $order->get_meta( '_aifd_fired_signals' );
 
     $confirmed_patterns[] = array(

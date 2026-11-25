@@ -296,6 +296,20 @@ class AiVerdictTest extends TestCase {
 		$this->assertStringContainsString( 'untrusted data', $prompt );
 	}
 
+	public function test_prompt_says_seed_patterns_are_synthetic() {
+		$prompt = aifd_build_prompt( $this->signals(), array(
+			'available'       => true,
+			'context_summary' => 'Similar fraud pattern found: card_fraud (similarity: 0.97, source: synthetic_seed)',
+		) );
+
+		$this->assertStringContainsString( 'Seed patterns (source: synthetic_seed) are made-up examples, not records of real fraud: do not treat a match as evidence on its own.', $prompt );
+		$this->assertStringNotContainsString( 'historical', $prompt );
+	}
+
+	public function test_prompt_without_pattern_context_has_no_seed_line() {
+		$this->assertStringNotContainsString( 'synthetic_seed', aifd_build_prompt( $this->signals(), array() ) );
+	}
+
 	// ── Secrets ────────────────────────────────────────
 
 	public function test_secrets_are_redacted_from_text() {

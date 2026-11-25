@@ -1291,7 +1291,7 @@ function aifd_build_prompt( $signals, $pinecone_context = array() ) {
 " . aifd_prompt_json( array( 'summary' => aifd_clean_external_text( $pinecone_context['context_summary'], 600 ) ) ) . "
 </pattern_context>
 
-Use the historical context alongside the order data to make a more informed decision.";
+Seed patterns (source: synthetic_seed) are made-up examples, not records of real fraud: do not treat a match as evidence on its own.";
     }
 
     // The bands follow this store's thresholds, the same ones the reply is checked against.
@@ -1567,21 +1567,18 @@ function aifd_get_pinecone_context( $signals ) {
         $metadata   = is_array( $match['metadata'] ?? null ) ? $match['metadata'] : array();
         $fraud_type = sanitize_key( (string) ( $metadata['fraud_type'] ?? 'unknown' ) );
         $score      = round( (float) ( $match['score'] ?? 0 ), 3 );
-        $times_seen = (int) ( $metadata['times_seen'] ?? 0 );
-        $confidence = round( (float) ( $metadata['confidence'] ?? 0 ), 2 );
+        $source     = sanitize_key( (string) ( $metadata['source'] ?? 'unknown' ) );
 
         if ( $fraud_type === 'legitimate' ) {
             $legit_matches[] = array(
-                'score'      => $score,
-                'times_seen' => $times_seen,
-                'confidence' => $confidence,
+                'score'  => $score,
+                'source' => $source,
             );
         } else {
             $fraud_matches[] = array(
                 'fraud_type'  => $fraud_type,
                 'score'       => $score,
-                'times_seen'  => $times_seen,
-                'confidence'  => $confidence,
+                'source'      => $source,
                 'description' => aifd_clean_external_text( $metadata['description'] ?? '', 200 ),
             );
         }
@@ -1592,8 +1589,7 @@ function aifd_get_pinecone_context( $signals ) {
     if ( ! empty( $fraud_matches ) ) {
         $top = $fraud_matches[0];
         $summary_parts[] = "Similar fraud pattern found: {$top['fraud_type']} " .
-                          "(similarity: {$top['score']}, seen {$top['times_seen']} times, " .
-                          "confidence: {$top['confidence']})";
+                          "(similarity: {$top['score']}, source: {$top['source']})";
 
         if ( ! empty( $top['description'] ) ) {
             $summary_parts[] = "Pattern description: {$top['description']}";
@@ -1603,7 +1599,7 @@ function aifd_get_pinecone_context( $signals ) {
     if ( ! empty( $legit_matches ) ) {
         $top = $legit_matches[0];
         $summary_parts[] = "Also matches legitimate pattern " .
-                          "(similarity: {$top['score']}, seen {$top['times_seen']} times)";
+                          "(similarity: {$top['score']}, source: {$top['source']})";
     }
 
     if ( empty( $summary_parts ) ) {
@@ -1831,7 +1827,7 @@ function aifd_log_order_with_ai( $order_id, $signals, $rule_result, $ai_result )
     if ( isset( $ai_result['pattern_boost'] ) ) {
         $log_entry .= "   Breakdown:\n";
         $log_entry .= "     Raw signal score:   " . ( $ai_result['signal_score']      ?? 0 ) . "/100\n";
-        $log_entry .= "     Pattern boost:      +" . ( $ai_result['pattern_boost']    ?? 0 ) . "\n";
+        $log_entry .= "     Pattern boost:      +" . ( $ai_result['pattern_boost']    ?? 0 ) . " (pattern scoring paused)\n";
         $log_entry .= "     Velocity boost:     +" . ( $ai_result['velocity_boost']   ?? 0 ) . "\n";
     }
 

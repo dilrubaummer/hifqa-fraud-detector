@@ -617,14 +617,14 @@ function aifd_render_settings_page() {
                     <th scope="row"><?php esc_html_e( 'Load Seed Patterns', 'hifqa-fraud-detector' ); ?></th>
                     <td>
                         <button type="button" id="aifd-load-seeds" class="button button-secondary">
-                            <?php esc_html_e( 'Load 65 Seed Patterns into Pinecone', 'hifqa-fraud-detector' ); ?>
+                            <?php esc_html_e( 'Load Seed Patterns into Pinecone', 'hifqa-fraud-detector' ); ?>
                         </button>
                         <span id="aifd-seed-status" class="aifd-status"></span>
                         <p class="description">
                             <?php
                             printf(
                                 /* translators: %s: currently selected AI provider name */
-                                esc_html__( 'Loads 50 fraud patterns + 15 legitimate patterns into Pinecone, embedded with your currently selected provider (%s) and stored in your merchant namespace. Only needs to be done once per provider. Save your settings first.', 'hifqa-fraud-detector' ),
+                                esc_html__( 'Loads the bundled seed patterns into Pinecone, embedded with your currently selected provider (%s) and stored in your merchant namespace. They are synthetic examples, not records of real fraud. Load them once per provider, and again after a plugin update changes them. Save your settings first.', 'hifqa-fraud-detector' ),
                                 '<strong>' . esc_html( strtoupper( $provider ) ) . '</strong>'
                             );
                             ?>

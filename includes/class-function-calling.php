@@ -15,7 +15,6 @@ class AIFD_FunctionCalling {
     // What the tools actually found. The final score is built from these —
     // never from numbers the model reports back.
     private $local_result           = null;
-    private $top_pattern_similarity = 0.0;
     private $velocity_suspicious    = false;
 
     /**
@@ -79,7 +78,7 @@ class AIFD_FunctionCalling {
                 'type'     => 'function',
                 'function' => array(
                     'name'        => 'search_fraud_patterns',
-                    'description' => 'Search the Pinecone vector store for historically confirmed fraud patterns similar to this order. Returns similarity scores and fraud type descriptions.',
+                    'description' => 'Search the Pinecone vector store for fraud patterns similar to this order. Returns similarity scores, fraud types, descriptions and each pattern\'s source. Seed patterns (source: synthetic_seed) are made-up examples, not records of real fraud: a match is not evidence on its own.',
                     'parameters'  => array(
                         'type'       => 'object',
                         'properties' => array(
@@ -204,17 +203,11 @@ class AIFD_FunctionCalling {
             $similarity = round( (float) ( $match['score'] ?? 0 ), 3 );
             $fraud_type = sanitize_key( (string) ( $metadata['fraud_type'] ?? 'unknown' ) );
 
-            // Only a match against a fraud pattern raises the score.
-            if ( 'legitimate' !== $fraud_type ) {
-                $this->top_pattern_similarity = max( $this->top_pattern_similarity, $similarity );
-            }
-
             $results[] = array(
                 'similarity'  => $similarity,
                 'fraud_type'  => $fraud_type,
                 'description' => aifd_clean_external_text( $metadata['description'] ?? '', 200 ),
-                'times_seen'  => (int) ( $metadata['times_seen'] ?? 0 ),
-                'confidence'  => round( (float) ( $metadata['confidence'] ?? 0 ), 2 ),
+                'source'      => sanitize_key( (string) ( $metadata['source'] ?? 'unknown' ) ),
             );
         }
 
@@ -284,7 +277,6 @@ class AIFD_FunctionCalling {
         // score up or down by reporting figures of its own.
         $local         = $this->get_local_result();
         $signal_score  = (float) $local['risk_score'];
-        $pattern_score = $this->top_pattern_similarity;
         $velocity_risk = $this->velocity_suspicious;
         $reasoning     = aifd_clean_external_text( $args['reasoning'] ?? '' );
 
@@ -292,17 +284,10 @@ class AIFD_FunctionCalling {
             $reasoning = implode( '. ', $local['reasons'] );
         }
 
-        // Boost score if strong Pinecone pattern match
+        // Pattern scoring is paused: the seed patterns are synthetic, so a
+        // match is not evidence yet. Matches still reach the model as context
+        // and the log. It comes back once it can be evaluated.
         $pattern_boost = 0;
-        if ( $pattern_score >= 0.90 ) {
-            $pattern_boost = 20;
-        } elseif ( $pattern_score >= 0.80 ) {
-            $pattern_boost = 15;
-        } elseif ( $pattern_score >= 0.70 ) {
-            $pattern_boost = 10;
-        } elseif ( $pattern_score >= 0.60 ) {
-            $pattern_boost = 5;
-        }
 
         // Boost if velocity suspicious
         $velocity_boost = $velocity_risk ? 10 : 0;
