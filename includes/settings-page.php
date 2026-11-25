@@ -94,7 +94,11 @@ function aifd_is_settings_form_save() {
         return false;
     }
 
-    return (bool) wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['_wpnonce'] ) ), 'aifd_settings-options' );
+    if ( ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['_wpnonce'] ) ), 'aifd_settings-options' ) ) {
+        return false;
+    }
+
+    return true;
 
 }
 

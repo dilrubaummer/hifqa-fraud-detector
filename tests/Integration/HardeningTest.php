@@ -513,6 +513,21 @@ class HardeningTest extends TestCase {
 		$this->assertSame( '', get_option( 'aifd_openai_key' ), 'Code and WP-CLI can still clear a key' );
 	}
 
+	public function test_settings_form_save_needs_our_page_and_a_valid_nonce() {
+		$this->begin_settings_form_save();
+		$this->assertTrue( aifd_is_settings_form_save(), 'Our form with a valid nonce' );
+
+		$_POST['_wpnonce'] = 'forged';
+		$this->assertFalse( aifd_is_settings_form_save(), 'Forged nonce' );
+
+		$this->begin_settings_form_save( array( 'option_page' => 'general' ) );
+		$this->assertFalse( aifd_is_settings_form_save(), 'Another settings page' );
+
+		$this->begin_settings_form_save();
+		unset( $_POST['_wpnonce'] );
+		$this->assertFalse( aifd_is_settings_form_save(), 'No nonce' );
+	}
+
 	public function test_vector_memory_problem_is_shown_to_the_admin() {
 		update_option( 'aifd_ai_provider', 'anthropic' );
 		update_option( 'aifd_pinecone_key', 'pk' );
