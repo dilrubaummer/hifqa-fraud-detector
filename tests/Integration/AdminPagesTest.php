@@ -76,6 +76,28 @@ class AdminPagesTest extends TestCase {
 		$this->assertStringNotContainsString( '<style', $html );
 	}
 
+	public function test_settings_page_has_no_per_provider_index_fields() {
+		ob_start();
+		aifd_render_settings_page();
+		$html = ob_get_clean();
+
+		$this->assertStringNotContainsString( 'aifd_pinecone_index', $html );
+		$this->assertStringContainsString( 'name="aifd_pinecone_host"', $html, 'precondition: the Pinecone section rendered' );
+		$this->assertStringContainsString( '1536 for OpenAI, 1024 for Anthropic (Voyage AI), 768 for Gemini and Ollama', $html );
+	}
+
+	public function test_index_name_settings_and_lookup_are_gone() {
+		aifd_register_settings();
+		$registered = get_registered_settings();
+
+		foreach ( array( 'aifd_pinecone_index_openai', 'aifd_pinecone_index_anthropic', 'aifd_pinecone_index_768' ) as $option ) {
+			$this->assertArrayNotHasKey( $option, $registered );
+		}
+		$this->assertArrayHasKey( 'aifd_pinecone_host', $registered, 'precondition: the settings were registered' );
+		$this->assertFalse( method_exists( 'AIFD_Embeddings', 'get_index_name' ) );
+		$this->assertArrayNotHasKey( 'index_key', ( new \AIFD_Embeddings() )->get_config( 'openai' ) );
+	}
+
 	public function test_provider_switch_notice_renders_without_inline_scripts() {
 		update_option( 'aifd_provider_switched', array( 'from' => 'openai', 'to' => 'gemini', 'handled' => false ) );
 		set_current_screen( self::SETTINGS_HOOK );

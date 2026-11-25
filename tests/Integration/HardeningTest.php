@@ -548,6 +548,10 @@ class HardeningTest extends TestCase {
 		update_option( 'aifd_confirmed_patterns', array( array( 'order_id' => 1 ) ) );
 		set_transient( 'aifd_provider_circuit_open', true, 600 );
 		update_option( 'aifd_ai_hourly_budget', 20 );
+		// Settings removed in 1.1.0, still saved on older installs.
+		update_option( 'aifd_pinecone_index_openai', 'fraud-patterns-1536' );
+		update_option( 'aifd_pinecone_index_anthropic', 'fraud-patterns-1024' );
+		update_option( 'aifd_pinecone_index_768', 'fraud-patterns-768' );
 		set_transient( 'aifd_ai_budget', array( 'hour' => gmdate( 'YmdH' ), 'count' => 3 ), HOUR_IN_SECONDS );
 		update_option( 'unrelated_plugin_option', 'keep me' );
 

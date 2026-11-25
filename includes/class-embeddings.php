@@ -10,22 +10,18 @@ class AIFD_Embeddings {
         'openai'    => array(
             'model'     => 'text-embedding-3-small',
             'dimension' => 1536,
-            'index_key' => 'aifd_pinecone_index_openai',
         ),
         'anthropic' => array(
             'model'     => 'voyage-3',
             'dimension' => 1024,
-            'index_key' => 'aifd_pinecone_index_anthropic',
         ),
         'gemini'    => array(
             'model'     => 'gemini-embedding-001',
             'dimension' => 768,
-            'index_key' => 'aifd_pinecone_index_768',
         ),
         'ollama'    => array(
             'model'     => 'nomic-embed-text',
             'dimension' => 768,
-            'index_key' => 'aifd_pinecone_index_768',
         ),
     );
 
@@ -45,14 +41,6 @@ class AIFD_Embeddings {
             $provider = get_option( 'aifd_ai_provider', 'openai' );
         }
         return $this->models[ $provider ] ?? $this->models['openai'];
-    }
-
-    /**
-     * Get Pinecone index name for current provider
-     */
-    public function get_index_name( $provider = null ) {
-        $config = $this->get_config( $provider );
-        return get_option( $config['index_key'], $config['index_key'] );
     }
 
     /**

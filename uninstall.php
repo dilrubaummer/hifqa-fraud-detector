@@ -39,6 +39,7 @@ function aifd_uninstall_site() {
         'aifd_ollama_host',
         'aifd_ollama_model',
         'aifd_pinecone_host',
+        // Index-name settings removed in 1.1.0: still deleted for older installs.
         'aifd_pinecone_index',
         'aifd_pinecone_index_openai',
         'aifd_pinecone_index_anthropic',

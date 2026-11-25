@@ -231,23 +231,6 @@ function aifd_register_settings() {
         'default'           => '',
     ));
 
-    // Pinecone index name per embedding dimension
-    register_setting( 'aifd_settings', 'aifd_pinecone_index_openai', array(
-        'type'              => 'string',
-        'sanitize_callback' => 'sanitize_text_field',
-        'default'           => 'fraud-patterns-1536',
-    ));
-    register_setting( 'aifd_settings', 'aifd_pinecone_index_anthropic', array(
-        'type'              => 'string',
-        'sanitize_callback' => 'sanitize_text_field',
-        'default'           => 'fraud-patterns-1024',
-    ));
-    register_setting( 'aifd_settings', 'aifd_pinecone_index_768', array(
-        'type'              => 'string',
-        'sanitize_callback' => 'sanitize_text_field',
-        'default'           => 'fraud-patterns-768',
-    ));
-
 }
 
 /**
@@ -562,50 +545,7 @@ function aifd_render_settings_page() {
                             class="regular-text"
                             placeholder="https://fraud-patterns-xxx.svc.xxx.pinecone.io">
                         <p class="description">
-                            <?php esc_html_e( 'Must start with https://. The index host depends on which provider you select — each embedding dimension needs its own index.', 'hifqa-fraud-detector' ); ?>
-                        </p>
-                    </td>
-                </tr>
-            </table>
-
-            <h3><?php esc_html_e( 'Index Per Embedding Dimension', 'hifqa-fraud-detector' ); ?></h3>
-            <p class="description">
-                <?php esc_html_e( 'Different providers produce different vector sizes. Create one Pinecone index per dimension and note the names below for your own reference.', 'hifqa-fraud-detector' ); ?>
-            </p>
-            <table class="form-table">
-                <tr>
-                    <th scope="row">
-                        <?php esc_html_e( 'OpenAI Index', 'hifqa-fraud-detector' ); ?> <span class="aifd-muted"><?php esc_html_e( '(1536 dimensions)', 'hifqa-fraud-detector' ); ?></span>
-                    </th>
-                    <td>
-                        <input type="text"
-                            name="aifd_pinecone_index_openai"
-                            value="<?php echo esc_attr( get_option('aifd_pinecone_index_openai', 'fraud-patterns-1536') ); ?>"
-                            class="regular-text">
-                    </td>
-                </tr>
-                <tr>
-                    <th scope="row">
-                        <?php esc_html_e( 'Anthropic Index', 'hifqa-fraud-detector' ); ?> <span class="aifd-muted"><?php esc_html_e( '(1024 dimensions — Voyage AI)', 'hifqa-fraud-detector' ); ?></span>
-                    </th>
-                    <td>
-                        <input type="text"
-                            name="aifd_pinecone_index_anthropic"
-                            value="<?php echo esc_attr( get_option('aifd_pinecone_index_anthropic', 'fraud-patterns-1024') ); ?>"
-                            class="regular-text">
-                    </td>
-                </tr>
-                <tr>
-                    <th scope="row">
-                        <?php esc_html_e( 'Gemini / Ollama Index', 'hifqa-fraud-detector' ); ?> <span class="aifd-muted"><?php esc_html_e( '(768 dimensions)', 'hifqa-fraud-detector' ); ?></span>
-                    </th>
-                    <td>
-                        <input type="text"
-                            name="aifd_pinecone_index_768"
-                            value="<?php echo esc_attr( get_option('aifd_pinecone_index_768', 'fraud-patterns-768') ); ?>"
-                            class="regular-text">
-                        <p class="description">
-                            <?php esc_html_e( 'Gemini and Ollama both produce 768-dimension vectors and can share one index (they use separate namespaces, so data never mixes).', 'hifqa-fraud-detector' ); ?>
+                            <?php esc_html_e( 'Must start with https://. The index dimension must match the selected provider: 1536 for OpenAI, 1024 for Anthropic (Voyage AI), 768 for Gemini and Ollama. Use a different index host when you switch to a provider with another dimension.', 'hifqa-fraud-detector' ); ?>
                         </p>
                     </td>
                 </tr>
