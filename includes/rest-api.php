@@ -117,14 +117,24 @@ function aifd_check_permission() {
     return current_user_can( 'manage_options' );
 }
 
+/**
+ * Move the confirmed-fraud count and value when an order gains or loses the
+ * merchant's "confirmed fraud" verdict. Each order is counted once.
+ * Totals are added as stored on each order, in that order's currency.
+ */
+function aifd_count_confirmed_fraud( $order, $step ) {
+    update_option( 'aifd_total_confirmed_fraud', max( 0, (int) get_option( 'aifd_total_confirmed_fraud', 0 ) + $step ) );
+    update_option( 'aifd_confirmed_fraud_value', max( 0, (float) get_option( 'aifd_confirmed_fraud_value', 0 ) + $step * (float) $order->get_total() ) );
+}
+
 // Stats endpoint
 function aifd_get_stats() {
     return rest_ensure_response( array(
         'blocked' => (int) get_option( 'aifd_total_blocked', 0 ),
         'review'  => (int) get_option( 'aifd_total_review', 0 ),
         'allowed' => (int) get_option( 'aifd_total_allowed', 0 ),
-        'saved'   => (float) get_option( 'aifd_total_saved', 0 ),
         'confirmed_fraud'  => (int) get_option( 'aifd_total_confirmed_fraud', 0 ),
+        'confirmed_fraud_value' => (float) get_option( 'aifd_confirmed_fraud_value', 0 ),
         'false_positives'  => (int) get_option( 'aifd_total_false_positives', 0 ),
         'tier1_active'    => aifd_tier1_ready(),
         'tier2_active'    => aifd_tier2_ready(),
@@ -227,6 +237,11 @@ function aifd_confirm_fraud( $request ) {
         return new WP_Error( 'not_found', __( 'Order not found', 'hifqa-fraud-detector' ), array( 'status' => 404 ) );
     }
 
+    // Confirming an order a second time does not count it again.
+    if ( 'CONFIRMED_FRAUD' !== $order->get_meta( '_aifd_review_status' ) ) {
+        aifd_count_confirmed_fraud( $order, 1 );
+    }
+
     // Update review status
     $order->update_meta_data( '_aifd_review_status', 'CONFIRMED_FRAUD' );
     $order->update_meta_data( '_aifd_reviewed_at', current_time( 'mysql' ) );
@@ -273,12 +288,6 @@ function aifd_confirm_fraud( $request ) {
 
     update_option( 'aifd_confirmed_patterns', $confirmed_patterns, false );
 
-    // Increment confirmed fraud counter
-    update_option(
-        'aifd_total_confirmed_fraud',
-        get_option( 'aifd_total_confirmed_fraud', 0 ) + 1
-    );
-
     if ( $saved ) {
         $message = __( 'Confirmed as fraud. Pattern saved to Pinecone — the system will recognize this faster next time.', 'hifqa-fraud-detector' );
     } elseif ( $vector_on ) {
@@ -309,6 +318,11 @@ function aifd_override_fraud( $request ) {
 
     // Get fired signals BEFORE we change anything
     $fired_signals = $order->get_meta( '_aifd_fired_signals' );
+
+    // An order confirmed as fraud earlier no longer counts as confirmed fraud.
+    if ( 'CONFIRMED_FRAUD' === $order->get_meta( '_aifd_review_status' ) ) {
+        aifd_count_confirmed_fraud( $order, -1 );
+    }
 
     // Update review status
     $order->update_meta_data( '_aifd_review_status', 'FALSE_POSITIVE' );

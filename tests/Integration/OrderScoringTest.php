@@ -59,7 +59,7 @@ class OrderScoringTest extends TestCase {
 		$this->assertSame( 'on-hold', $third->get_status() );
 
 		$this->assertSame( 1, (int) get_option( 'aifd_total_blocked' ) );
-		$this->assertEquals( 900, (float) get_option( 'aifd_total_saved' ) );
+		$this->assertFalse( get_option( 'aifd_total_saved' ), 'a block is not counted as money saved' );
 
 		$blocked_mails = array_filter( $this->hifqa_mail_subjects(), function ( $s ) {
 			return strpos( $s, 'Blocked' ) !== false;

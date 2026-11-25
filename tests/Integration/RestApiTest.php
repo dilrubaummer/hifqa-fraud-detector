@@ -195,6 +195,75 @@ class RestApiTest extends TestCase {
 		$this->assertSame( 404, $this->request( 'POST', '/order/999999/override' )->get_status() );
 	}
 
+	// ── Confirmed fraud value ──────────────────────────
+
+	private function stats() {
+		return $this->request( 'GET', '/stats' )->get_data();
+	}
+
+	private function confirm( $order ) {
+		return $this->request( 'POST', '/order/' . $order->get_id() . '/confirm-fraud' );
+	}
+
+	public function test_blocked_orders_are_not_counted_as_confirmed_fraud() {
+		wp_set_current_user( $this->admin_id );
+		$this->make_blocked_order();
+
+		$stats = $this->stats();
+
+		$this->assertSame( 0, $stats['confirmed_fraud'] );
+		$this->assertSame( 0.0, $stats['confirmed_fraud_value'] );
+		$this->assertArrayNotHasKey( 'saved', $stats, 'the old "value of blocked orders" figure is gone' );
+	}
+
+	public function test_confirmed_fraud_value_adds_up_confirmed_orders_only() {
+		wp_set_current_user( $this->admin_id );
+		$first  = $this->make_blocked_order(); // total 900
+		$second = $this->make_order( $this->risky_order_props( array( 'total' => 50, 'billing_email' => 'two@mailinator.com' ) ) );
+		$this->make_blocked_order(); // blocked, never confirmed
+
+		$this->confirm( $first );
+		$this->confirm( $second );
+		$stats = $this->stats();
+
+		$this->assertSame( 2, $stats['confirmed_fraud'] );
+		$this->assertSame( 950.0, $stats['confirmed_fraud_value'] );
+	}
+
+	public function test_confirming_the_same_order_twice_counts_it_once() {
+		wp_set_current_user( $this->admin_id );
+		$order = $this->make_blocked_order();
+
+		$this->confirm( $order );
+		$this->confirm( $order );
+		$stats = $this->stats();
+
+		$this->assertSame( 1, $stats['confirmed_fraud'] );
+		$this->assertSame( 900.0, $stats['confirmed_fraud_value'] );
+	}
+
+	public function test_a_confirmed_order_overridden_later_no_longer_counts() {
+		wp_set_current_user( $this->admin_id );
+		$order = $this->make_blocked_order();
+
+		$this->confirm( $order );
+		$this->request( 'POST', '/order/' . $order->get_id() . '/override' );
+		$stats = $this->stats();
+
+		$this->assertSame( 0, $stats['confirmed_fraud'] );
+		$this->assertSame( 0.0, $stats['confirmed_fraud_value'] );
+	}
+
+	public function test_dashboard_no_longer_receives_the_blocked_value() {
+		$GLOBALS['wp_scripts'] = null;
+		wp_set_current_user( $this->admin_id );
+
+		aifd_enqueue_react( 'toplevel_page_hifqa-fraud-detector' );
+
+		$this->assertStringNotContainsString( '"saved"', wp_scripts()->get_data( 'aifd-dashboard', 'data' ) );
+		$GLOBALS['wp_scripts'] = null;
+	}
+
 	// ── Feedback loop ──────────────────────────────────
 
 	public function test_false_positive_override_releases_order_and_learns() {

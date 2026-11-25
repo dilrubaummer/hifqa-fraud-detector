@@ -521,7 +521,7 @@ const FraudDashboard = () => {
                         <StatCard value={stats?.blocked ?? 0}         label={ __( 'Blocked Orders', 'hifqa-fraud-detector' ) } color="#ef4444" />
                         <StatCard value={stats?.review ?? 0}          label={ __( 'Need Review', 'hifqa-fraud-detector' ) } color="#f59e0b" />
                         <StatCard value={stats?.allowed ?? 0}         label={ __( 'Allowed', 'hifqa-fraud-detector' ) } color="#10b981" />
-                        <StatCard value={Number(stats?.saved ?? 0).toFixed(0)} label={ __( 'Value of Blocked Orders', 'hifqa-fraud-detector' ) } color="#6366f1" prefix={ aifdData.currency || '' } />
+                        <StatCard value={Number(stats?.confirmed_fraud_value ?? 0).toFixed(0)} label={ __( 'Confirmed Fraud Value', 'hifqa-fraud-detector' ) } color="#6366f1" prefix={ aifdData.currency || '' } />
                     </div>
 
                     {/* Feedback Stats */}

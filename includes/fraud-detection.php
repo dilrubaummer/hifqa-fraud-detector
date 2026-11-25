@@ -1370,7 +1370,7 @@ function aifd_safe_decision( $result ) {
 /**
  * Move the dashboard counters when an order gains or loses a decision.
  */
-function aifd_count_decision( $decision, $order, $step = 1 ) {
+function aifd_count_decision( $decision, $step = 1 ) {
 
     $options = array(
         'BLOCK'  => 'aifd_total_blocked',
@@ -1383,10 +1383,6 @@ function aifd_count_decision( $decision, $order, $step = 1 ) {
     }
 
     update_option( $options[ $decision ], max( 0, (int) get_option( $options[ $decision ], 0 ) + $step ) );
-
-    if ( 'BLOCK' === $decision ) {
-        update_option( 'aifd_total_saved', max( 0, (float) get_option( 'aifd_total_saved', 0 ) + $step * (float) $order->get_total() ) );
-    }
 
 }
 
@@ -1429,8 +1425,8 @@ function aifd_update_order_status( $order_id, $ai_result, $risk_result ) {
     }
 
     // Update stats counters
-    aifd_count_decision( $previous, $order, -1 );
-    aifd_count_decision( $decision, $order );
+    aifd_count_decision( $previous, -1 );
+    aifd_count_decision( $decision );
 
     // Update WooCommerce order status
     if ( $decision === 'BLOCK' ) {

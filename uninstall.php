@@ -63,6 +63,7 @@ function aifd_uninstall_site() {
         'aifd_total_allowed',
         'aifd_total_saved',
         'aifd_total_confirmed_fraud',
+        'aifd_confirmed_fraud_value',
         'aifd_total_false_positives',
     );
 
