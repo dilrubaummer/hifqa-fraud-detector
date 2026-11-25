@@ -511,6 +511,16 @@ function aifd_extract_signals( $order ) {
         'return'        => 'ids',
     ));
 
+    // Velocity looks at the last 24 hours only — a loyal customer's order
+    // history is not a burst. This order is included in the count.
+    $orders_last_day = '' === (string) $customer_email ? array() : wc_get_orders( array(
+        'type'          => 'shop_order',
+        'billing_email' => $customer_email,
+        'date_created'  => '>' . ( time() - DAY_IN_SECONDS ),
+        'limit'         => 20,
+        'return'        => 'ids',
+    ));
+
     // Store average order value
     $store_average = aifd_get_store_average_order_value();
 
@@ -528,7 +538,7 @@ function aifd_extract_signals( $order ) {
     $risky_country_combo  = aifd_is_risky_country_combo( $billing_country, $shipping_country );
     $freight_forwarder    = aifd_is_freight_forwarder( $order->get_shipping_address_1() );
     $card_testing_pattern = aifd_is_card_testing( $customer_ip, $customer_email );
-    $high_velocity        = ( count( $previous_orders ) >= 3 );
+    $high_velocity        = ( count( $orders_last_day ) >= 3 );
     $new_account          = aifd_is_new_account( $customer_id );
     $multiple_addresses   = aifd_has_multiple_addresses( $customer_email );
     $chargeback_history   = aifd_has_chargeback_history( $customer_email, $customer_ip );
