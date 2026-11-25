@@ -401,7 +401,7 @@ function aifd_reset_weights() {
 
 function aifd_get_signal_tier( $signal ) {
     $tier1 = array( 'card_testing_pattern', 'disposable_email', 'high_velocity', 'address_mismatch', 'freight_forwarder' );
-    $tier2 = array( 'chargeback_history', 'first_order_high_value', 'ip_proxy_vpn', 'risky_country_combo', 'mismatched_names', 'no_phone_number' );
+    $tier2 = array( 'chargeback_history', 'first_order_high_value', 'risky_country_combo', 'mismatched_names', 'no_phone_number' );
     if ( in_array( $signal, $tier1, true ) ) return 1;
     if ( in_array( $signal, $tier2, true ) ) return 2;
     return 3;

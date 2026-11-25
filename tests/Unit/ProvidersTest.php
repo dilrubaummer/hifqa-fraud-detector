@@ -279,8 +279,11 @@ class ProvidersTest extends TestCase {
 		$low  = $low->execute_tool( 'calculate_final_risk', array( 'reasoning' => 'weak match' ) );
 		$high = $high->execute_tool( 'calculate_final_risk', array( 'reasoning' => 'strong match' ) );
 
-		$this->assertEquals( 20, $low['risk_score'] );
-		$this->assertEquals( 35, $high['risk_score'] );
+		// Calibrated local score, plus 15 for a 0.80–0.89 match and nothing below 0.60.
+		$calibrated = $this->calibrated_agent_score();
+
+		$this->assertEquals( $calibrated, $low['risk_score'] );
+		$this->assertEquals( $calibrated + 15, $high['risk_score'] );
 		$this->assertSame( 'ALLOW', $low['decision'] );
 	}
 
@@ -295,7 +298,15 @@ class ProvidersTest extends TestCase {
 			'reasoning'     => 'x',
 		) );
 
-		$this->assertEquals( 20, $result['risk_score'], 'Claimed figures must not move the score in either direction' );
+		$this->assertEquals( $this->calibrated_agent_score(), $result['risk_score'], 'Claimed figures must not move the score in either direction' );
+	}
+
+	/**
+	 * The agent's score for agent_signals() with no pattern or velocity boost.
+	 */
+	private function calibrated_agent_score() {
+		$local = aifd_calculate_risk_score( $this->agent_signals() )['risk_score'];
+		return max( $local, min( 80, round( $local * 2 ) ) );
 	}
 
 	public function test_match_against_a_legitimate_pattern_does_not_raise_the_score() {

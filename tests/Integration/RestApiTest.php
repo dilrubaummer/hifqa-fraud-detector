@@ -111,7 +111,7 @@ class RestApiTest extends TestCase {
 		wp_set_current_user( $this->admin_id );
 
 		$data = $this->request( 'GET', '/weights' )->get_data();
-		$this->assertCount( 17, $data['weights'] );
+		$this->assertCount( 16, $data['weights'] );
 		$this->assertFalse( $data['personalized'] );
 
 		aifd_adjust_weights_on_override( array( 'guest_checkout' ) );

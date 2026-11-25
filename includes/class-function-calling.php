@@ -51,7 +51,7 @@ class AIFD_FunctionCalling {
                 'type'     => 'function',
                 'function' => array(
                     'name'        => 'check_signal_weights',
-                    'description' => 'Evaluate the 17 fraud signals using merchant-personalized weights. Returns a weighted risk score and list of triggered signals.',
+                    'description' => 'Evaluate the 16 fraud signals using merchant-personalized weights. Returns a weighted risk score and list of triggered signals.',
                     'parameters'  => array(
                         'type'       => 'object',
                         'properties' => array(

@@ -456,7 +456,6 @@ function aifd_get_default_signal_weights() {
         // Tier 2 — Strong
         'chargeback_history'     => 0.22,
         'first_order_high_value' => 0.15,
-        'ip_proxy_vpn'           => 0.12,
         'risky_country_combo'    => 0.12,
         'mismatched_names'       => 0.10,
         'no_phone_number'        => 0.10,
@@ -475,15 +474,19 @@ function aifd_get_default_signal_weights() {
 
 function aifd_get_signal_weights() {
 
-    // Merge with merchant personalized weights
-    $merchant_weights = get_option( 'aifd_merchant_weights', array() );
+    $defaults = aifd_get_default_signal_weights();
 
-    return wp_parse_args( $merchant_weights, aifd_get_default_signal_weights() );
+    // Merge with merchant personalized weights. Saved weights can name a
+    // signal that no longer exists (ip_proxy_vpn, before 1.1.0); its weight
+    // would still count toward the maximum score, so only known signals are kept.
+    $merchant_weights = array_intersect_key( (array) get_option( 'aifd_merchant_weights', array() ), $defaults );
+
+    return wp_parse_args( $merchant_weights, $defaults );
 
 }
 
 // ══════════════════════════════════════════════════════
-// SIGNAL EXTRACTION — 17 SIGNALS
+// SIGNAL EXTRACTION — 16 SIGNALS
 // ══════════════════════════════════════════════════════
 
 function aifd_extract_signals( $order ) {
@@ -566,7 +569,6 @@ function aifd_extract_signals( $order ) {
         // Tier 2 — Strong
         'chargeback_history'     => $chargeback_history,
         'first_order_high_value' => ( $is_new_customer && $is_high_value ),
-        'ip_proxy_vpn'           => false, // future: IP lookup API
         'risky_country_combo'    => $risky_country_combo,
         'mismatched_names'       => $mismatched_names,
         'no_phone_number'        => ! $has_phone,
@@ -783,7 +785,8 @@ function aifd_is_card_testing( $ip, $email ) {
         $created = $order->get_date_created();
         if ( ! $created || $created->getTimestamp() < $one_hour_ago ) continue;
 
-        if ( $order->get_customer_ip_address() === $ip ) {
+        // Orders with no IP (created in wp-admin, for example) are not one visitor.
+        if ( '' !== (string) $ip && $order->get_customer_ip_address() === $ip ) {
             $ip_count++;
         }
         if ( aifd_same_email( $order->get_billing_email(), $email ) ) {
@@ -884,7 +887,6 @@ function aifd_calculate_risk_score( $signals ) {
         'freight_forwarder'      => __( 'Shipping to freight forwarder address', 'hifqa-fraud-detector' ),
         'chargeback_history'     => __( 'Previous confirmed fraud', 'hifqa-fraud-detector' ),
         'first_order_high_value' => __( 'High value first order from new customer', 'hifqa-fraud-detector' ),
-        'ip_proxy_vpn'           => __( 'Order placed via VPN or proxy', 'hifqa-fraud-detector' ),
         'risky_country_combo'    => __( 'High-risk billing/shipping country combination', 'hifqa-fraud-detector' ),
         'mismatched_names'       => __( 'Billing and shipping names differ', 'hifqa-fraud-detector' ),
         'no_phone_number'        => __( 'No phone number provided', 'hifqa-fraud-detector' ),

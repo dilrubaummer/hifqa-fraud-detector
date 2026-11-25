@@ -173,7 +173,7 @@ class AIFD_Pinecone {
             'card_testing_pattern', 'disposable_email',
             'high_velocity', 'address_mismatch',
             'freight_forwarder', 'chargeback_history',
-            'first_order_high_value', 'ip_proxy_vpn',
+            'first_order_high_value',
             'risky_country_combo', 'mismatched_names',
             'no_phone_number', 'payment_method_risk',
             'multiple_addresses', 'order_total_anomaly',

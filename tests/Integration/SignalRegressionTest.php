@@ -162,6 +162,63 @@ class SignalRegressionTest extends TestCase {
 		$this->assertFalse( aifd_is_card_testing( '203.0.113.99', '' ) );
 	}
 
+	// ── Empty IP ───────────────────────────────────────
+
+	public function test_admin_created_orders_without_an_ip_do_not_trip_card_testing() {
+		$orders = array();
+		foreach ( array( 'a', 'b', 'c' ) as $who ) {
+			$orders[] = $this->make_order( array(
+				'customer_id'         => $this->make_customer(),
+				'billing_email'       => "customer-{$who}@example.com",
+				'customer_ip_address' => '',
+			) );
+		}
+
+		$this->assertNotContains( 'card_testing_pattern', (array) end( $orders )->get_meta( '_aifd_fired_signals' ) );
+		$this->assertFalse( aifd_is_card_testing( '', 'customer-d@example.com' ) );
+	}
+
+	public function test_three_orders_from_one_ip_still_trip_card_testing() {
+		$orders = array();
+		foreach ( array( 'a', 'b', 'c' ) as $who ) {
+			$orders[] = $this->make_order( array(
+				'billing_email'       => "visitor-{$who}@example.com",
+				'customer_ip_address' => '198.51.100.77',
+			) );
+		}
+
+		$this->assertContains( 'card_testing_pattern', (array) end( $orders )->get_meta( '_aifd_fired_signals' ) );
+	}
+
+	// ── ip_proxy_vpn removed ───────────────────────────
+
+	public function test_ip_proxy_vpn_signal_no_longer_exists() {
+		$this->assertArrayNotHasKey( 'ip_proxy_vpn', aifd_get_default_signal_weights() );
+		$this->assertCount( 16, aifd_get_default_signal_weights() );
+
+		$order = $this->make_order();
+		$this->assertArrayNotHasKey( 'ip_proxy_vpn', aifd_extract_signals( $order ) );
+	}
+
+	public function test_stale_saved_ip_proxy_vpn_weight_is_ignored() {
+		// What a 1.0.0 store saves after one "Not Fraud" override: the full weight list.
+		$saved                 = aifd_get_default_signal_weights();
+		$saved['ip_proxy_vpn'] = 0.12;
+		$saved['odd_hours']    = 0.03;
+		update_option( 'aifd_merchant_weights', $saved );
+
+		$weights = aifd_get_signal_weights();
+
+		$this->assertArrayNotHasKey( 'ip_proxy_vpn', $weights );
+		$this->assertEquals( 0.03, $weights['odd_hours'], 'known saved weights still apply' );
+
+		// The stale weight no longer dilutes the score: one card-testing hit is 0.30 of the live total.
+		$result = aifd_calculate_risk_score( $this->clean_signals( array( 'card_testing_pattern' => true ) ) );
+		$this->assertEquals( round( 0.30 / array_sum( $weights ) * 100 ), $result['risk_score'] );
+
+		$this->assertSame( $saved, get_option( 'aifd_merchant_weights' ), 'the saved option is not rewritten' );
+	}
+
 	// ── chargeback_history ("Previous confirmed fraud") ──
 
 	public function test_abandoned_order_is_not_previous_confirmed_fraud() {

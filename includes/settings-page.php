@@ -320,7 +320,7 @@ function aifd_render_settings_page() {
             <div class="aifd-callout aifd-callout--success">
                 <strong>✅ <?php esc_html_e( 'Local Fraud Detection — Always Active', 'hifqa-fraud-detector' ); ?></strong>
                 <p>
-                    <?php esc_html_e( 'A 17-signal weighted scoring engine checks every order automatically. It is pure PHP, needs no API keys and sends no order data to external services. This is the foundation — everything below is optional.', 'hifqa-fraud-detector' ); ?>
+                    <?php esc_html_e( 'A 16-signal weighted scoring engine checks every order automatically. It is pure PHP, needs no API keys and sends no order data to external services. This is the foundation — everything below is optional.', 'hifqa-fraud-detector' ); ?>
                 </p>
             </div>
 

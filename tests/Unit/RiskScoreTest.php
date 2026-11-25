@@ -23,7 +23,7 @@ class RiskScoreTest extends TestCase {
 
 		$this->assertSame( 100.0, (float) $result['risk_score'] );
 		$this->assertSame( 'BLOCK', $result['decision'] );
-		$this->assertCount( 17, $result['fired_signals'] );
+		$this->assertCount( 16, $result['fired_signals'] );
 	}
 
 	public function test_score_is_normalised_share_of_total_weight() {
