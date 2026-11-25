@@ -833,6 +833,22 @@ class ProvidersTest extends TestCase {
 		$this->assertStringContainsString( '401', $result['message'] );
 	}
 
+	public function test_migrated_confirmed_patterns_carry_no_made_up_counts() {
+		update_option( 'aifd_openai_key', 'sk-test' );
+		update_option( 'aifd_pinecone_key', 'pk' );
+		update_option( 'aifd_pinecone_host', 'https://idx.pinecone.io' );
+		update_option( 'aifd_confirmed_patterns', array( array( 'order_id' => 42, 'pattern_text' => 'disposable_email no_phone_number' ) ) );
+		$this->seed_loader_responds();
+
+		$result = ( new AIFD_Pinecone() )->aifd_migrate_namespace( 'gemini', 'openai', false );
+
+		$this->assertSame( 1, $result['migrated'] );
+		$upsert   = json_decode( $this->requests_to( '/vectors/upsert' )[0]['args']['body'], true );
+		$metadata = $upsert['vectors'][0]['metadata'];
+		$this->assertSame( array( 'pattern', 'fraud_type', 'source', 'provider', 'description' ), array_keys( $metadata ) );
+		$this->assertSame( 'merchant_confirmed', $metadata['source'] );
+	}
+
 	public function test_seed_file_has_50_well_formed_synthetic_patterns() {
 		$patterns = json_decode( file_get_contents( AIFD_PATH . 'data/seed-patterns.json' ), true );
 

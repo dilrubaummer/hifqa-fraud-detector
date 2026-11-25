@@ -335,12 +335,10 @@ its vector id is `confirmed_<keyed hash>_<provider>`, not the order id.
   "id": "seed_001",
   "values": [0.123, 0.456, ...],
   "metadata": {
-    "pattern":     "disposable_email address_mismatch high_value no_phone",
+    "pattern":     "disposable_email address_mismatch first_order_high_value no_phone_number cod_payment",
     "fraud_type":  "card_fraud",
-    "confidence":  0.97,
-    "times_seen":  1250,
-    "source":      "seed_dataset",
-    "description": "Classic stolen card pattern",
+    "source":      "synthetic_seed",
+    "description": "Card fraud: disposable email, billing and shipping countries differ, high value first order, no phone number, cash on delivery",
     "provider":    "openai"
   },
   "namespace": "1_openai"
@@ -473,7 +471,7 @@ Two actions:
 ├── Confirm Fraud
 │     → embed behavior pattern
 │     → store in merchant namespace in Pinecone
-│     → confidence: 1.0 (merchant confirmed)
+│     → source: merchant_confirmed
 │     → increment fraud counter
 │
 └── Override (not fraud — false positive)

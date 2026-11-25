@@ -281,8 +281,6 @@ class AIFD_Pinecone {
                 array(
                     'pattern'     => $pattern['pattern_text'],
                     'fraud_type'  => 'confirmed_fraud',
-                    'confidence'  => 1.0,
-                    'times_seen'  => 1,
                     'source'      => 'merchant_confirmed',
                     'provider'    => $to_provider,
                     'description' => 'Merchant-confirmed fraud pattern',

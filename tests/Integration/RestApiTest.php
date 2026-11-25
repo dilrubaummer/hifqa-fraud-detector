@@ -340,6 +340,42 @@ class RestApiTest extends TestCase {
 		$this->assertSame( aifd_pattern_vector_id( $order->get_id(), 'openai' ), $body['vectors'][0]['id'] );
 	}
 
+	/**
+	 * 1.0.0 then looked for the closest other pattern and saved it again with
+	 * its counter raised, sending this order's vector under that pattern's id.
+	 */
+	public function test_confirm_fraud_leaves_other_stored_patterns_alone() {
+		wp_set_current_user( $this->admin_id );
+		update_option( 'aifd_openai_key', 'sk-test' );
+		update_option( 'aifd_pinecone_key', 'pk' );
+		update_option( 'aifd_pinecone_host', 'https://idx.pinecone.io' );
+		$order = $this->make_blocked_order();
+
+		$this->http_requests = array();
+		$this->respond_with( function ( $url ) {
+			if ( false !== strpos( $url, 'api.openai.com/v1/embeddings' ) ) {
+				return self::json_response( array( 'data' => array( array( 'embedding' => array( 0.1, 0.2 ) ) ) ) );
+			}
+			if ( false !== strpos( $url, '/query' ) ) {
+				return self::json_response( array( 'matches' => array( array(
+					'id'       => 'seed_001',
+					'score'    => 0.99,
+					'metadata' => array( 'fraud_type' => 'card_fraud', 'times_seen' => 1250 ),
+				) ) ) );
+			}
+			return self::json_response( array( 'upsertedCount' => 1 ) );
+		} );
+
+		$data = $this->request( 'POST', '/order/' . $order->get_id() . '/confirm-fraud' )->get_data();
+
+		$this->assertTrue( $data['pinecone_saved'] );
+		$paths = array_map( function ( $r ) {
+			return wp_parse_url( $r['url'], PHP_URL_HOST ) . wp_parse_url( $r['url'], PHP_URL_PATH );
+		}, $this->http_requests );
+		$this->assertSame( array( 'api.openai.com/v1/embeddings', 'idx.pinecone.io/vectors/upsert' ), $paths, 'One embedding and one write of this order\'s own pattern; no query, no other vector touched' );
+		$this->assertStringNotContainsString( 'seed_001', $this->http_requests[1]['args']['body'] );
+	}
+
 	public function test_confirmed_pattern_sent_to_pinecone_carries_no_order_or_customer_detail() {
 		wp_set_current_user( $this->admin_id );
 		update_option( 'aifd_openai_key', 'sk-test' );
@@ -370,7 +406,7 @@ class RestApiTest extends TestCase {
 		$metadata = $vector['metadata'];
 
 		$this->assertSame(
-			array( 'pattern', 'fraud_type', 'confidence', 'times_seen', 'source', 'provider', 'description' ),
+			array( 'pattern', 'fraud_type', 'source', 'provider', 'description' ),
 			array_keys( $metadata )
 		);
 		$this->assertSame( 'Merchant-confirmed fraud pattern', $metadata['description'] );

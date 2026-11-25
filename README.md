@@ -92,7 +92,7 @@ rather than sending the text somewhere else:
 - Ollama → nomic-embed-text (768d)
 
 **🔄 Feedback Loop**
-- Confirm Fraud → saves the signal pattern to Pinecone (confidence: 1.0) — no order number, customer detail or AI-written text
+- Confirm Fraud → saves the signal pattern to Pinecone — no order number, customer detail or AI-written text
 - Override (Not Fraud) → adjusts merchant signal weights
 
 **⚛️ React Dashboard**

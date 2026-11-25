@@ -175,9 +175,9 @@ index in your own Pinecone account.
 * Data sent: the embedding (a list of numbers) of the pattern text,
   and a namespace made of your site's numeric ID and the provider
   name. Stored patterns also carry the pattern text itself, a pattern
-  type, a source label, a short fixed description, a confidence value
-  and a counter. When you confirm an order as fraud, its pattern is
-  stored the same way: no order number, risk score, customer detail or
+  type, a source label and a short fixed description. When you
+  confirm an order as fraud, its pattern is stored the same way: no
+  order number, risk score, customer detail or
   AI-written text is included, and the record's ID is a keyed hash,
   not the order number.
 * When: a search each time a new order is placed; a write when you
