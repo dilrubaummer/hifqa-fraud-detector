@@ -28,7 +28,6 @@ class HardeningTest extends TestCase {
 	// ── AI verdict vs local decision ───────────────────
 
 	public function test_ai_allow_cannot_release_an_order_the_local_rules_blocked() {
-		update_option( 'aifd_block_threshold', 60 );
 		$this->openai_replies_with( array( 'risk_score' => 2, 'risk_level' => 'LOW', 'decision' => 'ALLOW', 'reason' => 'Trusted customer' ) );
 		$props = $this->risky_order_props( array( 'customer_ip_address' => '198.51.100.7' ) );
 

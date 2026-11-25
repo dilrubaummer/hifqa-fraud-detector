@@ -205,12 +205,12 @@ function aifd_register_settings() {
     register_setting( 'aifd_settings', 'aifd_block_threshold', array(
         'type'              => 'integer',
         'sanitize_callback' => 'aifd_sanitize_block_threshold',
-        'default'           => 70,
+        'default'           => aifd_get_default_thresholds()['block'],
     ));
     register_setting( 'aifd_settings', 'aifd_review_threshold', array(
         'type'              => 'integer',
         'sanitize_callback' => 'aifd_sanitize_review_threshold',
-        'default'           => 40,
+        'default'           => aifd_get_default_thresholds()['review'],
     ));
 
     // Pinecone
@@ -515,14 +515,14 @@ function aifd_render_settings_page() {
                 <tr>
                     <th scope="row"><?php esc_html_e( 'Block Threshold', 'hifqa-fraud-detector' ); ?></th>
                     <td>
-                        <input type="number" name="aifd_block_threshold" value="<?php echo esc_attr( get_option( 'aifd_block_threshold', 70 ) ); ?>" min="1" max="100" class="small-text"> / 100
+                        <input type="number" name="aifd_block_threshold" value="<?php echo esc_attr( get_option( 'aifd_block_threshold', aifd_get_default_thresholds()['block'] ) ); ?>" min="1" max="100" class="small-text"> / 100
                         <p class="description"><?php esc_html_e( 'Orders scoring this or higher are put on hold automatically.', 'hifqa-fraud-detector' ); ?></p>
                     </td>
                 </tr>
                 <tr>
                     <th scope="row"><?php esc_html_e( 'Review Threshold', 'hifqa-fraud-detector' ); ?></th>
                     <td>
-                        <input type="number" name="aifd_review_threshold" value="<?php echo esc_attr( get_option( 'aifd_review_threshold', 40 ) ); ?>" min="0" max="100" class="small-text"> / 100
+                        <input type="number" name="aifd_review_threshold" value="<?php echo esc_attr( get_option( 'aifd_review_threshold', aifd_get_default_thresholds()['review'] ) ); ?>" min="0" max="100" class="small-text"> / 100
                         <p class="description"><?php esc_html_e( 'Orders scoring this or higher are flagged for manual review. If it is set above the block threshold, the block threshold is used for both.', 'hifqa-fraud-detector' ); ?></p>
                     </td>
                 </tr>

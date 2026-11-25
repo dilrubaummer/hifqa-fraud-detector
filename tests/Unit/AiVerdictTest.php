@@ -71,7 +71,7 @@ class AiVerdictTest extends TestCase {
 		$result = aifd_normalize_ai_result( $this->verdict( array( 'risk_score' => 10, 'decision' => 'BLOCK' ) ) );
 
 		$this->assertSame( 'BLOCK', $result['decision'] );
-		$this->assertSame( 70, $result['risk_score'] );
+		$this->assertSame( 60, $result['risk_score'], 'lifted to the default block threshold' );
 	}
 
 	public function test_risk_level_from_the_model_is_ignored() {

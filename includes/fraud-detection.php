@@ -85,12 +85,28 @@ function aifd_trip_circuit( $key ) {
 // ══════════════════════════════════════════════════════
 
 /**
+ * Thresholds used while the store has not saved its own.
+ *
+ * Before 1.1.0 the block default was 70, which local rules alone could not
+ * reach. A store that saved its thresholds keeps them: these defaults are
+ * only read, never written.
+ */
+function aifd_get_default_thresholds() {
+    return array(
+        'block'  => 60,
+        'review' => 40,
+    );
+}
+
+/**
  * Block and review thresholds, kept inside 0–100 with review never above block.
  */
 function aifd_get_thresholds() {
 
-    $block  = min( 100, max( 1, (int) get_option( 'aifd_block_threshold', 70 ) ) );
-    $review = min( $block, max( 0, (int) get_option( 'aifd_review_threshold', 40 ) ) );
+    $defaults = aifd_get_default_thresholds();
+
+    $block  = min( 100, max( 1, (int) get_option( 'aifd_block_threshold', $defaults['block'] ) ) );
+    $review = min( $block, max( 0, (int) get_option( 'aifd_review_threshold', $defaults['review'] ) ) );
 
     return array(
         'block'  => $block,
@@ -1069,6 +1085,14 @@ function aifd_build_prompt( $signals, $pinecone_context = array() ) {
 Use the historical context alongside the order data to make a more informed decision.";
     }
 
+    // The bands follow this store's thresholds, the same ones the reply is checked against.
+    $thresholds = aifd_get_thresholds();
+    $bands      = sprintf(
+        'Score bands for this store: ALLOW / LOW below %1$d, REVIEW / MEDIUM from %1$d, BLOCK / HIGH from %2$d (scores run 0-100).',
+        $thresholds['review'],
+        $thresholds['block']
+    );
+
     return "You are a fraud detection expert for an ecommerce store.
 
 Analyze the order in the <order_data> block and return a JSON fraud risk assessment.
@@ -1087,7 +1111,7 @@ Return ONLY valid JSON — no extra text:
   \"reason\": \"Plain English explanation of why this order is suspicious\"
 }
 
-Risk levels: LOW (0-39), MEDIUM (40-69), HIGH (70-100)
+" . $bands . "
 Decisions: ALLOW, REVIEW, BLOCK";
 
 }

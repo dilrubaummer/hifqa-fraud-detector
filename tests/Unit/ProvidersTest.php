@@ -302,6 +302,22 @@ class ProvidersTest extends TestCase {
 	}
 
 	/**
+	 * Hard-coded on purpose, so a broken formula is caught: the other agent
+	 * score tests derive their expected value from the same code they test.
+	 * disposable_email alone is 0.25 / 2.27 = 11 locally; the agent's ×2
+	 * calibration makes it 22 (until that calibration is removed).
+	 */
+	public function test_agent_score_for_disposable_email_alone_is_pinned() {
+		$this->assertEquals( 11, aifd_calculate_risk_score( $this->agent_signals() )['risk_score'] );
+
+		$agent  = new AIFD_FunctionCalling( $this->agent_signals(), array() );
+		$result = $agent->execute_tool( 'calculate_final_risk', array( 'reasoning' => 'pinned' ) );
+
+		$this->assertEquals( 22, $result['risk_score'] );
+		$this->assertSame( 'ALLOW', $result['decision'] );
+	}
+
+	/**
 	 * The agent's score for agent_signals() with no pattern or velocity boost.
 	 */
 	private function calibrated_agent_score() {

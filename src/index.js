@@ -30,7 +30,8 @@ const api = {
 
 // ── Score Bar ──────────────────────────────────
 const ScoreBar = ({ score }) => {
-    const color = score >= 70 ? '#ef4444' : score >= 40 ? '#f59e0b' : '#10b981';
+    const { block = 60, review = 40 } = aifdData.thresholds || {};
+    const color = score >= block ? '#ef4444' : score >= review ? '#f59e0b' : '#10b981';
     return (
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div style={{ flex: 1, height: '6px', background: '#f1f5f9', borderRadius: '3px' }}>

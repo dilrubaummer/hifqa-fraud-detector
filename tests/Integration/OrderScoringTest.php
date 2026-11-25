@@ -46,9 +46,7 @@ class OrderScoringTest extends TestCase {
 	}
 
 	public function test_card_testing_burst_is_blocked_and_held() {
-		// Local rules alone top out around 64 for this burst, so use a stricter
-		// store threshold to exercise the block path.
-		update_option( 'aifd_block_threshold', 60 );
+		// Default thresholds: local rules alone must be able to reach BLOCK.
 		$props = $this->risky_order_props( array( 'customer_ip_address' => '198.51.100.7' ) );
 
 		$this->make_order( $props );

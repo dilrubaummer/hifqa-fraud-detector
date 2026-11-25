@@ -46,12 +46,14 @@ function aifd_enqueue_react( $hook ) {
 
     // Pass data from PHP to React
     wp_localize_script( 'aifd-dashboard', 'aifdData', array(
-        'apiUrl'   => rest_url( 'aifd/v1/' ),
-        'nonce'    => wp_create_nonce( 'wp_rest' ),
-        'blocked'  => get_option( 'aifd_total_blocked', 0 ),
-        'review'   => get_option( 'aifd_total_review', 0 ),
-        'allowed'  => get_option( 'aifd_total_allowed', 0 ),
-        'saved'    => get_option( 'aifd_total_saved', 0 ),
-        'currency' => html_entity_decode( get_woocommerce_currency_symbol(), ENT_QUOTES, 'UTF-8' ),
+        'apiUrl'     => rest_url( 'aifd/v1/' ),
+        'nonce'      => wp_create_nonce( 'wp_rest' ),
+        'blocked'    => get_option( 'aifd_total_blocked', 0 ),
+        'review'     => get_option( 'aifd_total_review', 0 ),
+        'allowed'    => get_option( 'aifd_total_allowed', 0 ),
+        'saved'      => get_option( 'aifd_total_saved', 0 ),
+        'currency'   => html_entity_decode( get_woocommerce_currency_symbol(), ENT_QUOTES, 'UTF-8' ),
+        // The score bar colours follow the store's own thresholds.
+        'thresholds' => aifd_get_thresholds(),
     ));
 }
