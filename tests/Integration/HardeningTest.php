@@ -21,6 +21,19 @@ class HardeningTest extends TestCase {
 		} );
 	}
 
+	/**
+	 * Gemini uses the prompt path, where the model's own score is taken (then checked).
+	 */
+	private function gemini_replies_with( array $verdict ) {
+		update_option( 'aifd_ai_provider', 'gemini' );
+		update_option( 'aifd_gemini_key', 'AIza-test-key' );
+		$this->respond_with( function () use ( $verdict ) {
+			return self::json_response( array( 'candidates' => array( array(
+				'content' => array( 'parts' => array( array( 'text' => wp_json_encode( $verdict ) ) ) ),
+			) ) ) );
+		} );
+	}
+
 	private function notes( $order ) {
 		return implode( "\n", wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ) );
 	}
@@ -41,6 +54,23 @@ class HardeningTest extends TestCase {
 		$this->assertSame( 'on-hold', $third->get_status() );
 		$this->assertStringContainsString( 'does not lift a local block', $third->get_meta( '_aifd_reason' ) );
 		$this->assertStringNotContainsString( 'FRAUD CHECK PASSED', $this->notes( $third ) );
+	}
+
+	public function test_ai_allow_cannot_clear_an_order_the_local_rules_flagged_for_review() {
+		$this->gemini_replies_with( array( 'risk_score' => 3, 'risk_level' => 'LOW', 'decision' => 'ALLOW', 'reason' => 'Trusted customer' ) );
+
+		$order = $this->make_order( $this->risky_order_props() );
+		$local = aifd_calculate_risk_score( aifd_extract_signals( $order ) );
+
+		$this->assertSame( 'REVIEW', $local['decision'], 'precondition: local rules flag this order for review' );
+		$this->assertNotEmpty( $this->http_requests, 'precondition: the AI provider was asked' );
+
+		$this->assertSame( 'REVIEW', $order->get_meta( '_aifd_decision' ) );
+		$this->assertSame( 'MEDIUM', $order->get_meta( '_aifd_risk_level' ) );
+		$this->assertGreaterThanOrEqual( $local['risk_score'], (int) $order->get_meta( '_aifd_risk_score' ) );
+		$this->assertStringContainsString( 'does not clear a local review', $order->get_meta( '_aifd_reason' ) );
+		$this->assertStringNotContainsString( 'FRAUD CHECK PASSED', $this->notes( $order ) );
+		$this->assertCount( 1, $this->hifqa_mail_subjects(), 'the merchant is still told to review it' );
 	}
 
 	/**

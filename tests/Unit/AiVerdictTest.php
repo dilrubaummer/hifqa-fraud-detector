@@ -133,6 +133,62 @@ class AiVerdictTest extends TestCase {
 		$this->assertSame( 90, $result['risk_score'] );
 	}
 
+	public function test_ai_cannot_lower_a_local_review_to_allow() {
+		$ai     = aifd_normalize_ai_result( $this->verdict( array( 'risk_score' => 5, 'decision' => 'ALLOW', 'reason' => 'Looks fine' ) ) );
+		$result = aifd_apply_local_floor( $ai, $this->local( 'REVIEW', 45 ) );
+
+		$this->assertSame( 'REVIEW', $result['decision'] );
+		$this->assertSame( 'MEDIUM', $result['risk_level'] );
+		$this->assertSame( 45, $result['risk_score'] );
+		$this->assertStringContainsString( 'Card testing pattern detected', $result['reason'] );
+		$this->assertStringContainsString( 'does not clear a local review', $result['reason'] );
+		$this->assertStringContainsString( 'Looks fine', $result['reason'] );
+	}
+
+	public function test_ai_score_never_drops_below_the_local_score() {
+		$ai     = aifd_normalize_ai_result( $this->verdict( array( 'risk_score' => 41, 'decision' => 'REVIEW' ) ) );
+		$result = aifd_apply_local_floor( $ai, $this->local( 'REVIEW', 55 ) );
+
+		$this->assertSame( 'REVIEW', $result['decision'] );
+		$this->assertSame( 55, $result['risk_score'] );
+	}
+
+	public function test_ai_can_raise_a_local_allow_to_review() {
+		$ai     = aifd_normalize_ai_result( $this->verdict( array( 'risk_score' => 48, 'decision' => 'REVIEW', 'reason' => 'Odd combination' ) ) );
+		$result = aifd_apply_local_floor( $ai, $this->local( 'ALLOW', 20 ) );
+
+		$this->assertSame( 'REVIEW', $result['decision'] );
+		$this->assertSame( 48, $result['risk_score'] );
+		$this->assertSame( 'Odd combination', $result['reason'] );
+	}
+
+	public function test_lower_ai_rating_without_a_reason_adds_no_ai_note() {
+		$ai     = aifd_normalize_ai_result( $this->verdict( array( 'risk_score' => 5, 'decision' => 'ALLOW', 'reason' => '' ) ) );
+		$result = aifd_apply_local_floor( $ai, $this->local( 'REVIEW', 45 ) );
+
+		$this->assertSame( 'Card testing pattern detected (+30)', $result['reason'] );
+	}
+
+	/**
+	 * @dataProvider every_lower_ai_decision
+	 */
+	public function test_no_ai_decision_is_ever_more_lenient_than_the_local_one( $local, $ai ) {
+		$scores = array( 'ALLOW' => 10, 'REVIEW' => 45, 'BLOCK' => 80 );
+		$ai     = aifd_normalize_ai_result( $this->verdict( array( 'risk_score' => $scores[ $ai ], 'decision' => $ai ) ) );
+		$result = aifd_apply_local_floor( $ai, $this->local( $local, $scores[ $local ] ) );
+
+		$this->assertSame( $local, $result['decision'] );
+		$this->assertSame( $scores[ $local ], $result['risk_score'] );
+	}
+
+	public function every_lower_ai_decision() {
+		return array(
+			'REVIEW → ALLOW' => array( 'REVIEW', 'ALLOW' ),
+			'BLOCK → ALLOW'  => array( 'BLOCK', 'ALLOW' ),
+			'BLOCK → REVIEW' => array( 'BLOCK', 'REVIEW' ),
+		);
+	}
+
 	public function test_agreeing_block_keeps_the_ai_verdict() {
 		$ai     = aifd_normalize_ai_result( $this->verdict( array( 'risk_score' => 99, 'decision' => 'BLOCK', 'reason' => 'Stolen card' ) ) );
 		$result = aifd_apply_local_floor( $ai, $this->local( 'BLOCK', 75 ) );

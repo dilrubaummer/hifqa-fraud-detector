@@ -269,13 +269,15 @@ function aifd_normalize_ai_result( $result ) {
 /**
  * Combine a validated AI verdict with the local one.
  *
- * A local BLOCK is final as far as the AI is concerned: the model can add its
- * explanation, but it cannot lower the decision or the score. Only a merchant
- * releasing the order by hand lifts a block.
+ * The AI can only raise: the result is never a more lenient decision, nor a
+ * lower score, than the local rules gave. A local REVIEW or BLOCK stands even
+ * if the model rates the order lower; only a merchant releases an order.
  */
 function aifd_apply_local_floor( $ai_result, $local_result ) {
 
-    if ( 'BLOCK' !== $local_result['decision'] || 'BLOCK' === $ai_result['decision'] ) {
+    $ai_result['risk_score'] = max( $ai_result['risk_score'], $local_result['risk_score'] );
+
+    if ( aifd_decision_rank( $ai_result['decision'] ) >= aifd_decision_rank( $local_result['decision'] ) ) {
         if ( '' === $ai_result['reason'] ) {
             $ai_result['reason'] = $local_result['reason'];
         }
@@ -283,15 +285,18 @@ function aifd_apply_local_floor( $ai_result, $local_result ) {
     }
 
     $ai_reason = $ai_result['reason'];
+    $levels    = array( 'BLOCK' => 'HIGH', 'REVIEW' => 'MEDIUM', 'ALLOW' => 'LOW' );
 
-    $ai_result['decision']   = 'BLOCK';
-    $ai_result['risk_level'] = 'HIGH';
-    $ai_result['risk_score'] = max( $ai_result['risk_score'], $local_result['risk_score'] );
+    $ai_result['decision']   = $local_result['decision'];
+    $ai_result['risk_level'] = $levels[ $local_result['decision'] ];
     $ai_result['reason']     = $local_result['reason'];
 
     if ( '' !== $ai_reason ) {
-        /* translators: %s: the AI provider's explanation for a lower risk rating */
-        $ai_result['reason'] .= ' ' . sprintf( __( 'The AI layer rated this order lower, which does not lift a local block. AI note: %s', 'hifqa-fraud-detector' ), $ai_reason );
+        $ai_result['reason'] .= ' ' . ( 'BLOCK' === $local_result['decision']
+            /* translators: %s: the AI provider's explanation for a lower risk rating */
+            ? sprintf( __( 'The AI layer rated this order lower, which does not lift a local block. AI note: %s', 'hifqa-fraud-detector' ), $ai_reason )
+            /* translators: %s: the AI provider's explanation for a lower risk rating */
+            : sprintf( __( 'The AI layer rated this order lower, which does not clear a local review. AI note: %s', 'hifqa-fraud-detector' ), $ai_reason ) );
     }
 
     return $ai_result;
