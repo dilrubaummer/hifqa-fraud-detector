@@ -26,6 +26,51 @@ class RiskScoreTest extends TestCase {
 		$this->assertCount( 16, $result['fired_signals'] );
 	}
 
+	// ── Claims made in readme.txt, README.md and ARCHITECTURE.md ──
+
+	/**
+	 * The highest local score any $count signals can reach: the $count
+	 * strongest default weights, scored by the real scorer (same rounding).
+	 */
+	private function best_score_with( $count ) {
+		$weights = aifd_get_default_signal_weights();
+		arsort( $weights );
+		$strongest = array_fill_keys( array_slice( array_keys( $weights ), 0, $count ), true );
+
+		return (int) aifd_calculate_risk_score( $this->clean_signals( $strongest ) )['risk_score'];
+	}
+
+	/**
+	 * The fewest signals that can reach $threshold with the default weights.
+	 */
+	private function fewest_signals_to_reach( $threshold ) {
+		$total = count( aifd_get_default_signal_weights() );
+		for ( $count = 1; $count <= $total; $count++ ) {
+			if ( $this->best_score_with( $count ) >= $threshold ) {
+				return $count;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * The docs say that with the local rules alone, Review needs at least four
+	 * signals at once and Block at least six, that the strongest single signal
+	 * is worth 13 points, and that the default weights add up to 2.27. If the
+	 * weights or the default thresholds change, this fails until the docs
+	 * (readme.txt, README.md, ARCHITECTURE.md) are updated with it.
+	 */
+	public function test_local_only_numbers_quoted_in_the_docs() {
+		$thresholds = aifd_get_default_thresholds();
+
+		$this->assertSame( array( 'block' => 60, 'review' => 40 ), $thresholds, 'Docs: Review from 40, Block from 60' );
+		$this->assertEqualsWithDelta( 2.27, array_sum( aifd_get_default_signal_weights() ), 0.0001, 'Docs: the weights add up to 2.27' );
+		$this->assertSame( 16, count( aifd_get_default_signal_weights() ), 'Docs: 16 signals' );
+		$this->assertSame( 13, $this->best_score_with( 1 ), 'Docs: the strongest signal is worth 13 points' );
+		$this->assertSame( 4, $this->fewest_signals_to_reach( $thresholds['review'] ), 'Docs: Review needs at least four signals' );
+		$this->assertSame( 6, $this->fewest_signals_to_reach( $thresholds['block'] ), 'Docs: Block needs at least six signals' );
+	}
+
 	public function test_score_is_normalised_share_of_total_weight() {
 		$weights = aifd_get_signal_weights();
 		$result  = aifd_calculate_risk_score( $this->clean_signals( array( 'card_testing_pattern' => true ) ) );
