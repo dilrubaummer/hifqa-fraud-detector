@@ -184,7 +184,7 @@ class OrderScoringTest extends TestCase {
 		$this->make_earlier_orders_from( '198.51.100.60' );
 		$this->openai_agent_replies_with( $this->full_agent_run( 'AI: stolen card pattern', array(), 1440 ) );
 
-		$order = $this->make_order( $this->risky_order_props( array( 'customer_ip_address' => '198.51.100.60' ) ) );
+		$order = $this->make_order_and_run_ai( $this->risky_order_props( array( 'customer_ip_address' => '198.51.100.60' ) ) );
 		$local = aifd_calculate_risk_score( aifd_extract_signals( $order ) );
 
 		$this->assertSame( 'REVIEW', $local['decision'], 'precondition: local rules alone only flag it' );
@@ -203,9 +203,9 @@ class OrderScoringTest extends TestCase {
 			return self::json_response( array( 'error' => array( 'message' => 'Overloaded' ) ), 503 );
 		} );
 
-		$order = $this->make_order();
+		$order = $this->make_order_and_run_ai( $this->risky_order_props() );
 
-		$this->assertSame( 'ALLOW', $order->get_meta( '_aifd_decision' ), 'Local result stands' );
+		$this->assertSame( 'REVIEW', $order->get_meta( '_aifd_decision' ), 'Local result stands' );
 		$this->assertSame( 'local_rules', $order->get_meta( '_aifd_provider' ) );
 		$this->assertSame( 1, (int) get_transient( 'aifd_provider_fails' ) );
 	}
@@ -214,7 +214,7 @@ class OrderScoringTest extends TestCase {
 		update_option( 'aifd_openai_key', 'sk-test' );
 		set_transient( 'aifd_provider_circuit_open', true, 600 );
 
-		$this->make_order();
+		$this->make_order_and_run_ai( $this->risky_order_props() );
 
 		$this->assertSame( array(), $this->http_requests );
 	}
@@ -248,7 +248,7 @@ class OrderScoringTest extends TestCase {
 		}
 
 		// Local rules alone flag this order for review; each verdict below raises it.
-		$order = $this->make_order( $this->risky_order_props( array( 'customer_ip_address' => '198.51.100.60' ) ) );
+		$order = $this->make_order_and_run_ai( $this->risky_order_props( array( 'customer_ip_address' => '198.51.100.60' ) ) );
 
 		$this->assertSame( 'REVIEW', aifd_calculate_risk_score( aifd_extract_signals( $order ) )['decision'], 'precondition: local rules alone only flag it' );
 		$this->assertSame( array( $expected_host ), array_values( array_unique( $this->requested_hosts() ) ), 'only the selected provider is contacted' );

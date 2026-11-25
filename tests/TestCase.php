@@ -65,6 +65,50 @@ abstract class TestCase extends WP_UnitTestCase {
 		);
 	}
 
+	// ── Queued AI checks ───────────────────────────────
+
+	/**
+	 * IDs of AI checks waiting in the Action Scheduler queue.
+	 */
+	protected function queued_ai_checks() {
+		return as_get_scheduled_actions( array(
+			'hook'     => 'aifd_ai_score_order',
+			'status'   => \ActionScheduler_Store::STATUS_PENDING,
+			'per_page' => -1,
+		), 'ids' );
+	}
+
+	/**
+	 * Run the queued AI checks the way Action Scheduler does, and fail the test
+	 * if one does not complete (the runner would otherwise swallow the error).
+	 *
+	 * @return int How many ran.
+	 */
+	protected function run_queued_ai() {
+		$ids = $this->queued_ai_checks();
+
+		foreach ( $ids as $id ) {
+			\ActionScheduler::runner()->process_action( $id, 'Hifqa tests' );
+
+			$logs = array_map( function ( $entry ) {
+				return $entry->get_message();
+			}, \ActionScheduler_Logger::instance()->get_logs( $id ) );
+			$this->assertSame( \ActionScheduler_Store::STATUS_COMPLETE, \ActionScheduler::store()->get_status( $id ), 'Queued AI check failed: ' . implode( ' | ', $logs ) );
+		}
+
+		return count( $ids );
+	}
+
+	/**
+	 * Save an order, then run the AI check it queued (if any) and reload it.
+	 */
+	protected function make_order_and_run_ai( array $props = array() ) {
+		$order = $this->make_order( $props );
+		$this->run_queued_ai();
+
+		return wc_get_order( $order->get_id() );
+	}
+
 	// ── Scripted AI agent runs (tool-call path) ────────
 
 	/**

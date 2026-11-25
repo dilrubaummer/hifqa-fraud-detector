@@ -405,12 +405,142 @@ function aifd_score_order( $order ) {
         'source'     => 'local_rules',
     );
 
+    // Update order + notify. Checkout makes no external calls: the verdict here is local.
+    $changed = aifd_update_order_status( $order_id, $final_result, $risk_result );
+
+    if ( $changed ) {
+        aifd_send_alert_email( $order_id, $final_result );
+    }
+
+    aifd_log_order_with_ai( $order_id, $fraud_signals, $risk_result, $final_result );
+
+    // Borderline orders get a second look from the AI layer, after checkout.
+    aifd_maybe_queue_ai_scoring( $order_id, $final_result );
+
+}
+
+// ══════════════════════════════════════════════════════
+// AI LAYER — queued, runs after checkout
+// ══════════════════════════════════════════════════════
+
+add_action( 'aifd_ai_score_order', 'aifd_run_ai_scoring', 10, 1 );
+
+/**
+ * The local scores the AI layer is asked about: from ten points below the
+ * review threshold up to just under the block threshold.
+ *
+ * Clear passes are not worth a paid call, and a local block cannot go any
+ * higher — the AI can only raise a decision.
+ */
+function aifd_get_ai_band() {
+
+    $thresholds = aifd_get_thresholds();
+
+    return array(
+        'min' => max( 0, $thresholds['review'] - 10 ),
+        'max' => $thresholds['block'] - 1,
+    );
+
+}
+
+function aifd_is_ai_borderline( $score ) {
+    $band = aifd_get_ai_band();
+    return $score >= $band['min'] && $score <= $band['max'];
+}
+
+/**
+ * Record where the AI layer is for an order: queued, done, failed or skipped.
+ */
+function aifd_set_ai_status( $order_id, $status ) {
+
+    $order = wc_get_order( $order_id );
+
+    if ( $order ) {
+        $order->update_meta_data( '_aifd_ai_status', $status );
+        $order->save();
+    }
+
+}
+
+/**
+ * Queue the AI layer for a borderline order. Nothing is queued unless the
+ * AI layer is configured and not paused.
+ *
+ * @return bool Whether a check was queued.
+ */
+function aifd_maybe_queue_ai_scoring( $order_id, $local_result ) {
+
+    if ( ! aifd_tier2_ready() || ! aifd_is_ai_borderline( (int) $local_result['risk_score'] ) ) {
+        return false;
+    }
+
+    if ( ! function_exists( 'as_enqueue_async_action' ) ) {
+        aifd_log_failure( 'ai_queue', 'Action Scheduler is not available, so the AI check was skipped', $order_id );
+        return false;
+    }
+
+    // Unique: scoring the same order twice (a resubmitted checkout) queues one check.
+    as_enqueue_async_action( 'aifd_ai_score_order', array( (int) $order_id ), 'hifqa-fraud-detector', true );
+    aifd_set_ai_status( $order_id, 'queued' );
+
+    return true;
+
+}
+
+/**
+ * The queued AI check for one order (Action Scheduler callback).
+ *
+ * The verdict the order carries when the check runs is the floor: the AI can
+ * move it to review or on-hold, never release it.
+ */
+function aifd_run_ai_scoring( $order_id ) {
+
+    $order = wc_get_order( $order_id );
+
+    if ( ! aifd_is_scorable_order( $order ) ) {
+        return;
+    }
+
+    // A block, or a verdict the merchant gave since the order was queued, has the last word.
+    if (
+        in_array( $order->get_meta( '_aifd_decision' ), array( 'BLOCK', 'BLOCKED', 'APPROVED' ), true ) ||
+        in_array( $order->get_meta( '_aifd_review_status' ), array( 'CONFIRMED_FRAUD', 'FALSE_POSITIVE' ), true )
+    ) {
+        aifd_set_ai_status( $order_id, 'skipped' );
+        return;
+    }
+
+    // Keys removed or breaker open since the order was queued.
+    if ( ! aifd_tier2_ready() ) {
+        aifd_set_ai_status( $order_id, 'skipped' );
+        aifd_log_failure( 'ai_queue', 'The AI layer was off or paused when the queued check ran', $order_id );
+        return;
+    }
+
+    $levels   = array( 'BLOCK' => 'HIGH', 'REVIEW' => 'MEDIUM', 'ALLOW' => 'LOW' );
+    $decision = aifd_safe_decision( array( 'decision' => $order->get_meta( '_aifd_decision' ) ) );
+    $current  = array(
+        'risk_score' => (int) $order->get_meta( '_aifd_risk_score' ),
+        'risk_level' => $levels[ $decision ],
+        'decision'   => $decision,
+        'reason'     => (string) $order->get_meta( '_aifd_reason' ),
+        'source'     => (string) $order->get_meta( '_aifd_provider' ),
+    );
+
+    // The signals recorded at checkout stay the order's record.
+    $risk_result = array(
+        'risk_score'    => $current['risk_score'],
+        'decision'      => $current['decision'],
+        'fired_signals' => (array) $order->get_meta( '_aifd_fired_signals' ),
+    );
+
+    $fraud_signals    = aifd_extract_signals( $order );
     $pinecone_context = array(
         'available' => false,
         'matches'   => array(),
     );
 
-    // ── Tier 1 — Vector memory (opt-in) ─────────────────────
+    // ── Tier 1 — Vector memory (opt-in, feeds the AI) ───────
     if ( aifd_tier1_ready() ) {
         try {
             $pinecone_context = aifd_get_pinecone_context( $fraud_signals );
@@ -422,36 +552,39 @@ function aifd_score_order( $order ) {
             aifd_trip_circuit( 'aifd_pinecone' );
             aifd_log_failure( 'vector_memory', $pinecone_context['error'], $order_id );
         }
-
-        $final_result['pinecone_matches'] = count( $pinecone_context['matches'] ?? array() );
-        $final_result['pinecone_context'] = $pinecone_context['context_summary'] ?? '';
     }
 
-    // ── Tier 2 — AI reasoning (opt-in) ──────────────────────
-    if ( aifd_tier2_ready() ) {
-        try {
-            $ai_result = aifd_normalize_ai_result( aifd_call_provider( $fraud_signals, $pinecone_context ) );
-        } catch ( Throwable $e ) {
-            $ai_result = new WP_Error( 'aifd_ai_exception', get_class( $e ) . ': ' . $e->getMessage() );
-        }
-
-        if ( is_wp_error( $ai_result ) ) {
-            // An unusable AI reply is a failure, never a pass: the local verdict stands.
-            aifd_trip_circuit( 'aifd_provider' );
-            aifd_log_failure( 'ai_reasoning', $ai_result->get_error_message(), $order_id );
-            $final_result['ai_failed'] = true;
-        } else {
-            $final_result = aifd_apply_local_floor( $ai_result, $final_result );
-        }
+    // ── Tier 2 — AI reasoning ───────────────────────────────
+    try {
+        $ai_result = aifd_normalize_ai_result( aifd_call_provider( $fraud_signals, $pinecone_context ) );
+    } catch ( Throwable $e ) {
+        $ai_result = new WP_Error( 'aifd_ai_exception', get_class( $e ) . ': ' . $e->getMessage() );
     }
 
-    // Update order + notify — always runs, regardless of which tier produced the score
+    if ( is_wp_error( $ai_result ) ) {
+        // An unusable AI reply is a failure, never a pass: the local verdict stands.
+        aifd_trip_circuit( 'aifd_provider' );
+        aifd_log_failure( 'ai_reasoning', $ai_result->get_error_message(), $order_id );
+
+        $order->add_order_note( __( 'HIFQA Fraud Detector: the AI layer was unavailable, so this order keeps its local-rules result.', 'hifqa-fraud-detector' ), false );
+        aifd_set_ai_status( $order_id, 'failed' );
+        aifd_log_order_with_ai( $order_id, $fraud_signals, $risk_result, $current + array( 'ai_failed' => true ) );
+
+        return;
+    }
+
+    $final_result = aifd_apply_local_floor( $ai_result, $current );
+
+    $final_result['pinecone_matches'] = count( $pinecone_context['matches'] ?? array() );
+    $final_result['pinecone_context'] = $pinecone_context['context_summary'] ?? '';
+
     $changed = aifd_update_order_status( $order_id, $final_result, $risk_result );
 
     if ( $changed ) {
         aifd_send_alert_email( $order_id, $final_result );
     }
 
+    aifd_set_ai_status( $order_id, 'done' );
     aifd_log_order_with_ai( $order_id, $fraud_signals, $risk_result, $final_result );
 
 }
@@ -1228,30 +1361,36 @@ function aifd_update_order_status( $order_id, $ai_result, $risk_result ) {
     aifd_count_decision( $previous, $order, -1 );
     aifd_count_decision( $decision, $order );
 
-    $ai_note = empty( $ai_result['ai_failed'] )
-        ? ''
-        : ' ' . __( 'The AI layer was unavailable, so this result comes from local rules only.', 'hifqa-fraud-detector' );
-
     // Update WooCommerce order status
     if ( $decision === 'BLOCK' ) {
-        $order->update_status( 'on-hold',
-            /* translators: %d: fraud risk score out of 100 */
-            sprintf( __( 'HIFQA Fraud Detector: HIGH RISK blocked. Score: %d/100.', 'hifqa-fraud-detector' ), $score ) );
+        // The AI layer can block an order after checkout. One that is already
+        // completed, refunded or cancelled is flagged, not reopened.
+        $held_note = '';
+
+        if ( $order->has_status( array( 'pending', 'processing', 'on-hold' ) ) ) {
+            $order->update_status( 'on-hold',
+                /* translators: %d: fraud risk score out of 100 */
+                sprintf( __( 'HIFQA Fraud Detector: HIGH RISK blocked. Score: %d/100.', 'hifqa-fraud-detector' ), $score ) );
+        } else {
+            /* translators: %s: the order's current status, for example "Completed" */
+            $held_note = ' ' . sprintf( __( 'The order was already %s, so its status was not changed.', 'hifqa-fraud-detector' ), wc_get_order_status_name( $order->get_status() ) );
+        }
+
         $order->add_order_note(
             /* translators: 1: fraud risk score out of 100, 2: reason for the decision */
-            '🚨 ' . sprintf( __( 'FRAUD ALERT: Blocked by HIFQA Fraud Detector. Score: %1$d/100. Reason: %2$s', 'hifqa-fraud-detector' ), $score, $reason ) . $ai_note,
+            '🚨 ' . sprintf( __( 'FRAUD ALERT: Blocked by HIFQA Fraud Detector. Score: %1$d/100. Reason: %2$s', 'hifqa-fraud-detector' ), $score, $reason ) . $held_note,
             false
         );
     } elseif ( $decision === 'REVIEW' ) {
         $order->add_order_note(
             /* translators: 1: fraud risk score out of 100, 2: reason for the decision */
-            '⚠️ ' . sprintf( __( 'FRAUD WARNING: Flagged for review. Score: %1$d/100. Reason: %2$s', 'hifqa-fraud-detector' ), $score, $reason ) . $ai_note,
+            '⚠️ ' . sprintf( __( 'FRAUD WARNING: Flagged for review. Score: %1$d/100. Reason: %2$s', 'hifqa-fraud-detector' ), $score, $reason ),
             false
         );
     } else {
         $order->add_order_note(
             /* translators: %d: fraud risk score out of 100 */
-            '✅ ' . sprintf( __( 'FRAUD CHECK PASSED. Score: %d/100.', 'hifqa-fraud-detector' ), $score ) . $ai_note,
+            '✅ ' . sprintf( __( 'FRAUD CHECK PASSED. Score: %d/100.', 'hifqa-fraud-detector' ), $score ),
             false
         );
     }

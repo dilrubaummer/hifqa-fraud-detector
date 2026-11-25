@@ -34,15 +34,24 @@ class HardeningTest extends TestCase {
 		$this->gemini_replies_with( array( 'risk_score' => 2, 'risk_level' => 'LOW', 'decision' => 'ALLOW', 'reason' => 'Trusted customer' ) );
 		$props = $this->risky_order_props( array( 'customer_ip_address' => '198.51.100.7' ) );
 
-		$this->make_order( $props );
-		$this->make_order( $props );
+		$this->make_order_and_run_ai( $props );
+		$this->make_order_and_run_ai( $props );
 		$third = $this->make_order( $props );
+
+		// A local block is never queued for the AI, and a check queued earlier refuses it.
+		$this->assertNotContains( 'queued', array( $third->get_meta( '_aifd_ai_status' ) ) );
+		$this->assertSame( 0, $this->run_queued_ai() );
+		$this->http_requests = array();
+		aifd_run_ai_scoring( $third->get_id() );
+		$third = wc_get_order( $third->get_id() );
+		$this->assertSame( array(), $this->http_requests, 'the AI is not asked about a local block' );
+		$this->assertSame( 'skipped', $third->get_meta( '_aifd_ai_status' ) );
 
 		$this->assertSame( 'BLOCK', $third->get_meta( '_aifd_decision' ) );
 		$this->assertSame( 'HIGH', $third->get_meta( '_aifd_risk_level' ) );
 		$this->assertGreaterThanOrEqual( 60, (int) $third->get_meta( '_aifd_risk_score' ) );
 		$this->assertSame( 'on-hold', $third->get_status() );
-		$this->assertStringContainsString( 'does not lift a local block', $third->get_meta( '_aifd_reason' ) );
+		$this->assertSame( 'local_rules', $third->get_meta( '_aifd_provider' ) );
 		$this->assertStringNotContainsString( 'FRAUD CHECK PASSED', $this->notes( $third ) );
 	}
 
@@ -51,11 +60,22 @@ class HardeningTest extends TestCase {
 		$this->openai_agent_replies_with( $this->full_agent_run( 'Trusted customer', array( 'risk_score' => 2, 'decision' => 'ALLOW' ) ) );
 		$props = $this->risky_order_props( array( 'customer_ip_address' => '198.51.100.7' ) );
 
-		$this->make_order( $props );
-		$this->make_order( $props );
-		$third = $this->make_order( $props );
+		$first  = $this->make_order_and_run_ai( $props );
+		$second = $this->make_order_and_run_ai( $props );
+		$third  = $this->make_order( $props );
 
-		$this->assertSame( 'openai_function_calling', $third->get_meta( '_aifd_provider' ), 'precondition: the agent verdict was used' );
+		// The agent's ALLOW claim reached the two borderline orders and changed nothing.
+		$this->assertSame( 'openai_function_calling', $first->get_meta( '_aifd_provider' ), 'precondition: the agent verdict was used' );
+		$this->assertSame( 'REVIEW', $first->get_meta( '_aifd_decision' ) );
+		$this->assertSame( 'REVIEW', $second->get_meta( '_aifd_decision' ) );
+
+		// The third is a local block: never queued, and a check queued earlier refuses it.
+		$this->assertSame( 0, $this->run_queued_ai() );
+		$this->http_requests = array();
+		aifd_run_ai_scoring( $third->get_id() );
+		$third = wc_get_order( $third->get_id() );
+		$this->assertSame( array(), $this->http_requests, 'the AI is not asked about a local block' );
+
 		$this->assertSame( 'BLOCK', $third->get_meta( '_aifd_decision' ) );
 		$this->assertSame( 'HIGH', $third->get_meta( '_aifd_risk_level' ) );
 		$this->assertGreaterThanOrEqual( 60, (int) $third->get_meta( '_aifd_risk_score' ) );
@@ -66,11 +86,12 @@ class HardeningTest extends TestCase {
 	public function test_ai_allow_cannot_clear_an_order_the_local_rules_flagged_for_review() {
 		$this->gemini_replies_with( array( 'risk_score' => 3, 'risk_level' => 'LOW', 'decision' => 'ALLOW', 'reason' => 'Trusted customer' ) );
 
-		$order = $this->make_order( $this->risky_order_props() );
+		$order = $this->make_order_and_run_ai( $this->risky_order_props() );
 		$local = aifd_calculate_risk_score( aifd_extract_signals( $order ) );
 
 		$this->assertSame( 'REVIEW', $local['decision'], 'precondition: local rules flag this order for review' );
 		$this->assertNotEmpty( $this->http_requests, 'precondition: the AI provider was asked' );
+		$this->assertSame( 'done', $order->get_meta( '_aifd_ai_status' ) );
 
 		$this->assertSame( 'REVIEW', $order->get_meta( '_aifd_decision' ) );
 		$this->assertSame( 'MEDIUM', $order->get_meta( '_aifd_risk_level' ) );
@@ -87,9 +108,10 @@ class HardeningTest extends TestCase {
 		// Prompt path: the only path where the model's own verdict reaches validation.
 		$this->gemini_replies_with( $reply );
 
-		$order = $this->make_order( $this->risky_order_props() );
+		$order = $this->make_order_and_run_ai( $this->risky_order_props() );
 
 		$this->assertSame( 'REVIEW', $order->get_meta( '_aifd_decision' ), 'Local rules flagged this order; a bad AI reply must not clear it' );
+		$this->assertSame( 'failed', $order->get_meta( '_aifd_ai_status' ) );
 		$this->assertSame( 'local_rules', $order->get_meta( '_aifd_provider' ) );
 		$this->assertSame( 1, (int) get_transient( 'aifd_provider_fails' ) );
 		$this->assertStringNotContainsString( 'FRAUD CHECK PASSED', $this->notes( $order ) );
@@ -121,9 +143,10 @@ class HardeningTest extends TestCase {
 			) ) ) );
 		} );
 
-		$order = $this->make_order( $this->risky_order_props() );
+		$order = $this->make_order_and_run_ai( $this->risky_order_props() );
 
 		$this->assertSame( 'REVIEW', $order->get_meta( '_aifd_decision' ), 'Local rules flagged this order; a bad AI reply must not clear it' );
+		$this->assertSame( 'failed', $order->get_meta( '_aifd_ai_status' ) );
 		$this->assertSame( 'local_rules', $order->get_meta( '_aifd_provider' ) );
 		$this->assertSame( 1, (int) get_transient( 'aifd_provider_fails' ) );
 		$this->assertStringNotContainsString( 'FRAUD CHECK PASSED', $this->notes( $order ) );
@@ -143,7 +166,7 @@ class HardeningTest extends TestCase {
 		// Prompt path: only there does the model supply the score.
 		$this->gemini_replies_with( array( 'risk_score' => 99999, 'decision' => 'BLOCK', 'reason' => 'Very bad' ) );
 
-		$order = $this->make_order();
+		$order = $this->make_order_and_run_ai( $this->risky_order_props() );
 
 		$this->assertSame( 100, (int) $order->get_meta( '_aifd_risk_score' ) );
 		$this->assertSame( 'BLOCK', $order->get_meta( '_aifd_decision' ) );
@@ -161,7 +184,7 @@ class HardeningTest extends TestCase {
 			$this->gemini_replies_with( array( 'risk_score' => 50, 'decision' => 'REVIEW', 'reason' => $reason ) );
 		}
 
-		$order = $this->make_order();
+		$order = $this->make_order_and_run_ai( $this->risky_order_props() );
 
 		$this->assertSame( 'Suspicious', $order->get_meta( '_aifd_reason' ) );
 	}
@@ -193,7 +216,7 @@ class HardeningTest extends TestCase {
 			return self::json_response( array( 'error' => array( 'message' => 'Incorrect API key provided: sk-proj-super-secret-000111' ) ), 401 );
 		} );
 
-		$this->make_order( array( 'billing_email' => 'private.person@example.com' ) );
+		$this->make_order_and_run_ai( $this->risky_order_props( array( 'billing_email' => 'private.person@example.com' ) ) );
 
 		$log = implode( "\n", $spy->entries );
 		$this->assertStringContainsString( '[ai_reasoning]', $log );
@@ -206,14 +229,15 @@ class HardeningTest extends TestCase {
 		// A full agent run, so the tool results sent back to the model are checked too.
 		$this->openai_agent_replies_with( $this->full_agent_run( 'ok' ) );
 
-		$this->make_order( array(
+		// Borderline (freight forwarder, mismatched names...) so the AI check runs.
+		$this->make_order_and_run_ai( $this->risky_order_props( array(
 			'billing_email'       => 'private.person@example.com',
 			'billing_phone'       => '555-867-5309',
 			'billing_first_name'  => 'Zebedee',
 			'billing_last_name'   => 'Quillfeather',
-			'shipping_address_1'  => '42 Wallaby Way',
+			'shipping_address_1'  => 'Shipito Freight Forwarding, 42 Wallaby Way',
 			'customer_ip_address' => '192.0.2.44',
-		) );
+		) ) );
 
 		// Three tool turns and the closing reply: every message the model saw.
 		$this->assertCount( 4, $this->http_requests );
@@ -244,7 +268,7 @@ class HardeningTest extends TestCase {
 			) ) ) ) ) ) );
 		} );
 
-		$this->make_order();
+		$this->make_order_and_run_ai( $this->risky_order_props() );
 
 		$hosts = array_count_values( $this->requested_hosts() );
 		$this->assertSame( 1, $hosts['idx.pinecone.io'], 'One Pinecone query per order, not two' );
@@ -265,9 +289,9 @@ class HardeningTest extends TestCase {
 			return self::json_response( array( 'error' => array( 'message' => 'down' ) ), 503 );
 		} );
 
-		$order = $this->make_order();
+		$order = $this->make_order_and_run_ai( $this->risky_order_props() );
 
-		$this->assertSame( 'ALLOW', $order->get_meta( '_aifd_decision' ) );
+		$this->assertSame( 'REVIEW', $order->get_meta( '_aifd_decision' ), 'the local verdict stands' );
 		$this->assertSame( 1, (int) get_transient( 'aifd_pinecone_fails' ) );
 	}
 
@@ -505,11 +529,12 @@ class HardeningTest extends TestCase {
 	// ── Uninstall ──────────────────────────────────────
 
 	public function test_uninstall_removes_plugin_data_and_leaves_orders_alone() {
-		$order = $this->make_order( $this->risky_order_props() );
 		foreach ( $this->key_options() as $option => $key ) {
 			update_option( $option, $key );
 		}
 		update_option( 'aifd_ai_provider', 'gemini' );
+		$order = $this->make_order( $this->risky_order_props() );
+		$this->assertCount( 1, $this->queued_ai_checks(), 'precondition: an AI check is waiting' );
 		update_option( 'aifd_merchant_weights', array( 'odd_hours' => 0.5 ) );
 		update_option( 'aifd_confirmed_patterns', array( array( 'order_id' => 1 ) ) );
 		set_transient( 'aifd_provider_circuit_open', true, 600 );
@@ -523,6 +548,7 @@ class HardeningTest extends TestCase {
 		global $wpdb;
 		$left = $wpdb->get_col( "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE 'aifd\\_%' OR option_name LIKE '\\_transient\\_aifd\\_%' OR option_name LIKE '\\_transient\\_timeout\\_aifd\\_%'" );
 		$this->assertSame( array(), $left );
+		$this->assertSame( array(), $this->queued_ai_checks(), 'queued AI checks are removed' );
 		$this->assertFalse( get_transient( 'aifd_provider_circuit_open' ) );
 		$this->assertSame( 'keep me', get_option( 'unrelated_plugin_option' ) );
 

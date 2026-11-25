@@ -81,6 +81,11 @@ function aifd_uninstall_site() {
         delete_transient( $transient );
     }
 
+    // AI checks still waiting in the queue would otherwise run with no handler.
+    if ( function_exists( 'as_unschedule_all_actions' ) ) {
+        as_unschedule_all_actions( 'aifd_ai_score_order' );
+    }
+
 }
 
 if ( is_multisite() ) {
