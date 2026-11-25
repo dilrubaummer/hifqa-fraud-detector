@@ -526,7 +526,8 @@ function aifd_extract_signals( $order ) {
 
     // Signal checks
     $disposable_email     = aifd_is_suspicious_email( $customer_email );
-    $address_mismatch     = ( $billing_country !== $shipping_country );
+    // An order with nothing to ship (digital goods) has no shipping country to compare.
+    $address_mismatch     = ( '' !== (string) $shipping_country && $billing_country !== $shipping_country );
     $mismatched_names     = ! empty( $shipping_name ) && ( $billing_name !== $shipping_name );
     $is_guest             = ( $customer_id === 0 );
     $is_new_customer      = ( count( $previous_orders ) <= 1 );

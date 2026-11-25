@@ -71,6 +71,97 @@ class SignalRegressionTest extends TestCase {
 		$this->assertNotContains( 'high_velocity', (array) $order->get_meta( '_aifd_fired_signals' ) );
 	}
 
+	// ── address_mismatch ───────────────────────────────
+
+	public function test_digital_order_without_shipping_country_has_no_address_mismatch() {
+		$order = $this->make_order( array(
+			'customer_id'         => $this->make_customer(),
+			'shipping_first_name' => '',
+			'shipping_last_name'  => '',
+			'shipping_address_1'  => '',
+			'shipping_country'    => '',
+		) );
+
+		$this->assertNotContains( 'address_mismatch', (array) $order->get_meta( '_aifd_fired_signals' ) );
+		$this->assertSame( 'ALLOW', $order->get_meta( '_aifd_decision' ) );
+	}
+
+	public function test_shipping_to_another_country_still_has_address_mismatch() {
+		$order = $this->make_order( array(
+			'customer_id'      => $this->make_customer(),
+			'billing_country'  => 'US',
+			'shipping_country' => 'CA',
+		) );
+
+		$this->assertContains( 'address_mismatch', (array) $order->get_meta( '_aifd_fired_signals' ) );
+	}
+
+	// ── Email matching ─────────────────────────────────
+
+	public function test_email_is_normalized_for_matching() {
+		$this->assertSame( 'john@gmail.com', aifd_normalize_email( '  John@Gmail.com ' ) );
+		$this->assertTrue( aifd_same_email( 'John@Gmail.com ', 'john@gmail.com' ) );
+		$this->assertFalse( aifd_same_email( '', '' ), 'two missing emails are not the same customer' );
+		$this->assertFalse( aifd_same_email( null, 'john@gmail.com' ) );
+	}
+
+	/**
+	 * Three orders, one address typed three ways, each from a different IP so
+	 * only the email can tie them together.
+	 */
+	private function make_mixed_case_burst() {
+		$orders = array();
+		foreach ( array( 'John@Gmail.com', 'JOHN@GMAIL.COM', 'john@gmail.com' ) as $i => $email ) {
+			$orders[] = $this->make_order( array(
+				'billing_email'       => $email,
+				'customer_ip_address' => '198.51.100.' . ( 10 + $i ),
+			) );
+		}
+		return $orders;
+	}
+
+	public function test_email_case_does_not_hide_a_burst_from_velocity_or_card_testing() {
+		$orders = $this->make_mixed_case_burst();
+		$fired  = (array) end( $orders )->get_meta( '_aifd_fired_signals' );
+
+		$this->assertContains( 'high_velocity', $fired );
+		$this->assertContains( 'card_testing_pattern', $fired );
+	}
+
+	public function test_velocity_tool_matches_email_case_insensitively() {
+		$this->make_mixed_case_burst();
+
+		$agent  = new \AIFD_FunctionCalling( array(
+			'customer_email' => 'john@gmail.com',
+			'customer_ip'    => '203.0.113.99',
+		) );
+		$result = $agent->execute_tool( 'check_velocity', array( 'window_minutes' => 60 ) );
+
+		$this->assertSame( 3, $result['email_order_count'] );
+		$this->assertTrue( $result['suspicious'] );
+	}
+
+	public function test_previous_confirmed_fraud_matches_email_case_insensitively() {
+		$first = $this->make_order( array( 'billing_email' => 'Fraudster@Example.com' ) );
+		$first->update_meta_data( '_aifd_review_status', 'CONFIRMED_FRAUD' );
+		$first->save();
+
+		$order = $this->make_order( array( 'billing_email' => 'fraudster@example.com' ) );
+
+		$this->assertContains( 'chargeback_history', (array) $order->get_meta( '_aifd_fired_signals' ) );
+	}
+
+	public function test_orders_without_an_email_are_not_counted_as_one_customer() {
+		foreach ( array( 1, 2, 3 ) as $i ) {
+			$this->make_order( array(
+				'billing_email'       => '',
+				'customer_ip_address' => '198.51.100.' . ( 20 + $i ),
+			) );
+		}
+
+		$this->assertFalse( aifd_is_card_testing( '203.0.113.99', '' ) );
+	}
+
 	// ── chargeback_history ("Previous confirmed fraud") ──
 
 	public function test_abandoned_order_is_not_previous_confirmed_fraud() {
