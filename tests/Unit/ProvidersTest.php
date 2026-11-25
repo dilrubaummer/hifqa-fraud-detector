@@ -615,6 +615,46 @@ class ProvidersTest extends TestCase {
 		$this->assertSame( 1536, ( new AIFD_Embeddings() )->get_config( 'nope' )['dimension'] );
 	}
 
+	/**
+	 * Each provider's index has a fixed dimension, so the embedding request
+	 * must not drift. OpenAI, Voyage and Ollama send no size: the model's own
+	 * size applies (text-embedding-3-small 1536, voyage-3 1024,
+	 * nomic-embed-text 768). Gemini's model defaults to 3072, so its request
+	 * must ask for 768. The whole body is pinned, so a changed model or an
+	 * added size is caught too.
+	 */
+	public function embedding_requests() {
+		return array(
+			'OpenAI' => array( 'openai', array( 'aifd_openai_key' => 'sk-test' ), 'https://api.openai.com/v1/embeddings', 1536,
+				array( 'input' => 'disposable_email', 'model' => 'text-embedding-3-small' ) ),
+			'Anthropic (Voyage AI)' => array( 'anthropic', array( 'aifd_voyage_key' => 'pa-test' ), 'https://api.voyageai.com/v1/embeddings', 1024,
+				array( 'input' => 'disposable_email', 'model' => 'voyage-3' ) ),
+			'Gemini' => array( 'gemini', array( 'aifd_gemini_key' => 'AIza-test-key' ), 'https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent', 768,
+				array( 'model' => 'models/gemini-embedding-001', 'content' => array( 'parts' => array( array( 'text' => 'disposable_email' ) ) ), 'outputDimensionality' => 768 ) ),
+			'Ollama' => array( 'ollama', array( 'aifd_ollama_host' => 'http://localhost:11434' ), 'http://localhost:11434/api/embeddings', 768,
+				array( 'model' => 'nomic-embed-text', 'prompt' => 'disposable_email' ) ),
+		);
+	}
+
+	/**
+	 * @dataProvider embedding_requests
+	 */
+	public function test_embedding_request_pins_model_and_dimension( $provider, array $options, $url, $dimension, array $body ) {
+		foreach ( $options as $option => $value ) {
+			update_option( $option, $value );
+		}
+		$this->respond_with( function () {
+			return self::json_response( array() );
+		} );
+
+		( new AIFD_Embeddings() )->embed( 'disposable_email', $provider );
+
+		$this->assertCount( 1, $this->http_requests );
+		$this->assertSame( $url, $this->http_requests[0]['url'] );
+		$this->assertSame( $body, json_decode( $this->http_requests[0]['args']['body'], true ) );
+		$this->assertSame( $dimension, ( new AIFD_Embeddings() )->get_config( $provider )['dimension'], 'The dimension shown in settings and docs' );
+	}
+
 	public function test_anthropic_without_voyage_key_fails_explicitly_and_calls_no_one() {
 		update_option( 'aifd_anthropic_key', 'ak-test' );
 		update_option( 'aifd_openai_key', 'sk-test' ); // Must never be used as a stand-in.
