@@ -239,7 +239,7 @@ class AIFD_FunctionCalling {
             if ( ! empty( $ip ) && $order->get_customer_ip_address() === $ip ) {
                 $ip_count++;
             }
-            if ( ! empty( $email ) && $order->get_billing_email() === $email ) {
+            if ( aifd_same_email( $order->get_billing_email(), $email ) ) {
                 $email_count++;
             }
         }

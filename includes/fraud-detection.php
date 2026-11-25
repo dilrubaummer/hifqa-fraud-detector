@@ -592,6 +592,26 @@ function aifd_extract_signals( $order ) {
 // SIGNAL HELPER FUNCTIONS
 // ══════════════════════════════════════════════════════
 
+/**
+ * An email address in the form used to tell whether two orders share it:
+ * trimmed and lowercased.
+ *
+ * WooCommerce keeps the case the customer typed, so in-PHP comparisons go
+ * through this. Lookups through wc_get_orders() compare in the database,
+ * which matches case-insensitively under WordPress's default collation.
+ */
+function aifd_normalize_email( $email ) {
+    return is_string( $email ) ? strtolower( trim( $email ) ) : '';
+}
+
+/**
+ * Whether two email addresses belong to the same customer. Empty never matches.
+ */
+function aifd_same_email( $a, $b ) {
+    $a = aifd_normalize_email( $a );
+    return '' !== $a && aifd_normalize_email( $b ) === $a;
+}
+
 function aifd_is_suspicious_email( $email ) {
 
     $disposable_domains = array(
@@ -766,7 +786,7 @@ function aifd_is_card_testing( $ip, $email ) {
         if ( $order->get_customer_ip_address() === $ip ) {
             $ip_count++;
         }
-        if ( $order->get_billing_email() === $email ) {
+        if ( aifd_same_email( $order->get_billing_email(), $email ) ) {
             $email_count++;
         }
     }
