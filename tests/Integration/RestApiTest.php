@@ -187,6 +187,26 @@ class RestApiTest extends TestCase {
 		$this->assertSame( 'on-hold', wc_get_order( $order->get_id() )->get_status() );
 	}
 
+	public function test_orders_carry_the_ai_check_status() {
+		wp_set_current_user( $this->admin_id );
+		$skipped = $this->make_blocked_order();
+		$skipped->update_meta_data( '_aifd_ai_status', 'skipped_budget' );
+		$skipped->save();
+		$never = $this->make_blocked_order();
+
+		$statuses = wp_list_pluck( $this->request( 'GET', '/orders' )->get_data(), 'ai_status', 'id' );
+
+		$this->assertSame( 'skipped_budget', $statuses[ $skipped->get_id() ] );
+		$this->assertSame( '', $statuses[ $never->get_id() ], 'Never sent to the AI' );
+	}
+
+	public function test_dashboard_bundle_shows_the_ai_check_column() {
+		$bundle = file_get_contents( AIFD_PATH . 'build/index.js' );
+
+		$this->assertStringContainsString( 'ai_status', $bundle, 'The built dashboard reads the new field' );
+		$this->assertStringContainsString( 'Skipped: hourly limit', $bundle );
+	}
+
 	public function test_actions_on_missing_orders_return_404() {
 		wp_set_current_user( $this->admin_id );
 

@@ -184,6 +184,7 @@ function aifd_get_flagged_orders() {
             'decision'         => $decision,
             'reason'           => $reason,
             'review_status'    => $review_status,
+            'ai_status'        => sanitize_key( (string) $order->get_meta( '_aifd_ai_status' ) ),
             'date'             => $created ? $created->date( 'Y-m-d H:i' ) : '',
         );
     }

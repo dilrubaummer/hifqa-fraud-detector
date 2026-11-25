@@ -340,6 +340,197 @@ class AsyncAiTest extends TestCase {
 		$this->assertSame( array( 'failed', 'skipped_budget' ), $this->ai_statuses( $orders ) );
 	}
 
+	// ── Hourly limit: visible without order notes ──────
+
+	public function test_hourly_limit_skips_are_counted_without_an_order_note() {
+		update_option( 'aifd_ai_hourly_budget', 2 );
+		$this->ai_replies_with( array( 'risk_score' => 50, 'decision' => 'REVIEW', 'reason' => 'x' ) );
+
+		$orders = $this->make_borderline_orders( 4 );
+		$this->run_queued_ai();
+
+		$skips = aifd_get_recent_ai_budget_skips();
+		$this->assertSame( 2, $skips['count'] );
+		$this->assertEqualsWithDelta( time(), $skips['last'], 5 );
+
+		foreach ( $orders as $order ) {
+			$this->assertStringNotContainsString( 'hourly', $this->notes( $order ), 'No order note for a skipped check' );
+		}
+	}
+
+	public function test_skip_counts_older_than_24_hours_drop_out() {
+		update_option( 'aifd_ai_budget_skips', array(
+			'hours' => array(
+				gmdate( 'YmdH', time() - 30 * HOUR_IN_SECONDS ) => 7,
+				gmdate( 'YmdH', time() - 2 * HOUR_IN_SECONDS )  => 3,
+			),
+			'last'  => time() - 2 * HOUR_IN_SECONDS,
+		) );
+
+		$this->assertSame( 3, aifd_get_recent_ai_budget_skips()['count'] );
+
+		aifd_record_ai_budget_skip();
+
+		$saved = get_option( 'aifd_ai_budget_skips' );
+		$this->assertSame( 4, aifd_get_recent_ai_budget_skips()['count'] );
+		$this->assertCount( 2, $saved['hours'], 'Hours older than 24 are dropped when a skip is recorded' );
+	}
+
+	public function test_missing_or_broken_skip_option_counts_as_none() {
+		$this->assertSame( array( 'count' => 0, 'last' => 0 ), aifd_get_recent_ai_budget_skips() );
+
+		update_option( 'aifd_ai_budget_skips', 'garbage' );
+		$this->assertSame( array( 'count' => 0, 'last' => 0 ), aifd_get_recent_ai_budget_skips() );
+
+		aifd_record_ai_budget_skip();
+		$this->assertSame( 1, aifd_get_recent_ai_budget_skips()['count'] );
+	}
+
+	private function budget_notice_html( $screen = 'dashboard' ) {
+		set_current_screen( $screen );
+		ob_start();
+		aifd_ai_budget_notice();
+		$html = ob_get_clean();
+		unset( $GLOBALS['current_screen'] );
+		return $html;
+	}
+
+	public function budget_notice_screens() {
+		return array(
+			'main Dashboard'           => array( 'dashboard', true ),
+			'orders list (legacy)'     => array( 'edit-shop_order', true ),
+			'edit order (legacy)'      => array( 'shop_order', true ),
+			'orders (HPOS)'            => array( 'woocommerce_page_wc-orders', true ),
+			'HIFQA dashboard'          => array( 'toplevel_page_hifqa-fraud-detector', true ),
+			'HIFQA settings'           => array( 'hifqa_page_hifqa-fraud-detector-settings', true ),
+			'posts list'               => array( 'edit-post', false ),
+			'plugins'                  => array( 'plugins', false ),
+			'WooCommerce settings'     => array( 'woocommerce_page_wc-settings', false ),
+			'products list'            => array( 'edit-product', false ),
+		);
+	}
+
+	/**
+	 * @dataProvider budget_notice_screens
+	 */
+	public function test_budget_notice_shows_only_on_the_dashboard_order_and_hifqa_screens( $screen, $shown ) {
+		$this->as_admin();
+		aifd_record_ai_budget_skip();
+
+		$html = $this->budget_notice_html( $screen );
+
+		if ( $shown ) {
+			$this->assertStringContainsString( 'aifd-budget-notice', $html );
+		} else {
+			$this->assertSame( '', $html );
+		}
+	}
+
+	public function test_budget_notice_is_hidden_without_a_screen() {
+		$this->as_admin();
+		aifd_record_ai_budget_skip();
+
+		ob_start();
+		aifd_ai_budget_notice();
+		$this->assertSame( '', ob_get_clean() );
+	}
+
+	private function as_admin() {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+	}
+
+	public function test_budget_notice_shows_the_count_and_what_it_may_mean() {
+		$this->as_admin();
+		update_option( 'aifd_ai_hourly_budget', 20 );
+		aifd_record_ai_budget_skip();
+		aifd_record_ai_budget_skip();
+		aifd_record_ai_budget_skip();
+
+		$html = $this->budget_notice_html();
+
+		$this->assertStringContainsString( 'In the last 24 hours, 3 orders were not checked by the AI because the hourly limit of 20 AI checks was reached.', $html );
+		$this->assertStringContainsString( 'bot attack', $html );
+		$this->assertStringContainsString( 'limit set too low', $html );
+		$this->assertStringContainsString( 'page=hifqa-fraud-detector-settings', $html );
+		$this->assertStringContainsString( 'action=aifd_dismiss_ai_budget_notice', $html );
+		$this->assertSame( 1, substr_count( $html, 'class="notice' ), 'One notice' );
+	}
+
+	public function test_budget_notice_uses_the_singular_for_one_order() {
+		$this->as_admin();
+		aifd_record_ai_budget_skip();
+
+		$this->assertStringContainsString( '1 order was not checked by the AI', $this->budget_notice_html() );
+	}
+
+	public function test_budget_notice_is_hidden_without_recent_skips_or_for_non_admins() {
+		$this->as_admin();
+		$this->assertSame( '', $this->budget_notice_html(), 'No skips' );
+
+		update_option( 'aifd_ai_budget_skips', array(
+			'hours' => array( gmdate( 'YmdH', time() - 30 * HOUR_IN_SECONDS ) => 5 ),
+			'last'  => time() - 30 * HOUR_IN_SECONDS,
+		) );
+		$this->assertSame( '', $this->budget_notice_html(), 'Only skips older than 24 hours' );
+
+		aifd_record_ai_budget_skip();
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'shop_manager' ) ) );
+		$this->assertSame( '', $this->budget_notice_html(), 'Not for users who cannot change the limit' );
+	}
+
+	public function test_dismissed_budget_notice_returns_only_after_a_new_skip() {
+		$this->as_admin();
+		update_option( 'aifd_ai_budget_skips', array(
+			'hours' => array( gmdate( 'YmdH' ) => 2 ),
+			'last'  => time() - 60,
+		) );
+		$this->assertNotSame( '', $this->budget_notice_html(), 'precondition: shown' );
+
+		aifd_dismiss_ai_budget_notice();
+		$this->assertSame( '', $this->budget_notice_html(), 'Hidden once dismissed' );
+
+		update_option( 'aifd_ai_budget_skips', array(
+			'hours' => array( gmdate( 'YmdH' ) => 3 ),
+			'last'  => time() + 60,
+		) );
+		$this->assertStringContainsString( '3 orders', $this->budget_notice_html(), 'A newer skip shows it again' );
+	}
+
+	public function test_dismiss_link_needs_an_admin_and_a_valid_nonce() {
+		$this->assertSame( 10, has_action( 'admin_post_aifd_dismiss_ai_budget_notice', 'aifd_handle_dismiss_ai_budget_notice' ) );
+
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'shop_manager' ) ) );
+		$_REQUEST['_wpnonce'] = wp_create_nonce( 'aifd_dismiss_ai_budget_notice' );
+		try {
+			aifd_handle_dismiss_ai_budget_notice();
+			$this->fail( 'A non-admin must be refused' );
+		} catch ( \WPDieException $e ) {
+			$this->assertFalse( get_option( 'aifd_ai_budget_notice_dismissed' ) );
+		}
+
+		$this->as_admin();
+		$_REQUEST['_wpnonce'] = 'forged';
+		try {
+			aifd_handle_dismiss_ai_budget_notice();
+			$this->fail( 'A forged nonce must be refused' );
+		} catch ( \WPDieException $e ) {
+			$this->assertFalse( get_option( 'aifd_ai_budget_notice_dismissed' ) );
+		}
+
+		// A valid request saves the dismissal, then redirects (stopped here before exit).
+		$_REQUEST['_wpnonce'] = wp_create_nonce( 'aifd_dismiss_ai_budget_notice' );
+		add_filter( 'wp_redirect', function () {
+			throw new \RuntimeException( 'redirected' );
+		} );
+		try {
+			aifd_handle_dismiss_ai_budget_notice();
+		} catch ( \RuntimeException $e ) {
+			$this->assertSame( 'redirected', $e->getMessage() );
+		}
+		unset( $_REQUEST['_wpnonce'] );
+		$this->assertEqualsWithDelta( time(), (int) get_option( 'aifd_ai_budget_notice_dismissed' ), 5 );
+	}
+
 	public function test_budget_starts_again_in_a_new_hour() {
 		update_option( 'aifd_ai_hourly_budget', 2 );
 		set_transient( 'aifd_ai_budget', array( 'hour' => gmdate( 'YmdH', time() - HOUR_IN_SECONDS ), 'count' => 2 ), HOUR_IN_SECONDS );

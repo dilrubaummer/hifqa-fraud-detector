@@ -89,6 +89,24 @@ const ReviewBadge = ({ status }) => {
     );
 };
 
+// ── AI Check Status ────────────────────────────
+// Where the AI layer is for this order. Empty: the order was never queued
+// (outside the borderline band, or the AI layer is off).
+const AiStatus = ({ status }) => {
+    const map = {
+        queued:         { color: '#3b82f6', label: __( 'Queued', 'hifqa-fraud-detector' ) },
+        done:           { color: '#10b981', label: __( 'Done', 'hifqa-fraud-detector' ) },
+        failed:         { color: '#ef4444', label: __( 'Failed', 'hifqa-fraud-detector' ) },
+        skipped:        { color: '#64748b', label: __( 'Skipped', 'hifqa-fraud-detector' ) },
+        skipped_budget: { color: '#f59e0b', label: __( 'Skipped: hourly limit', 'hifqa-fraud-detector' ) },
+    };
+    const s = map[status];
+    if ( ! s ) {
+        return <div style={{ fontSize: '12px', color: '#cbd5e1' }}>—</div>;
+    }
+    return <div style={{ fontSize: '12px', fontWeight: '600', color: s.color }}>{s.label}</div>;
+};
+
 // ── Stat Card ──────────────────────────────────
 const StatCard = ({ value, label, color, prefix = '' }) => (
     <div style={{
@@ -566,7 +584,7 @@ const FraudDashboard = () => {
                             <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
                                 <div style={{
                                     display: 'grid',
-                                    gridTemplateColumns: '60px 1fr 130px 100px 90px 90px 160px',
+                                    gridTemplateColumns: '60px 1fr 130px 100px 110px 90px 90px 160px',
                                     padding: '10px 16px', background: '#f8fafc',
                                     borderBottom: '1px solid #e2e8f0',
                                     fontSize: '11px', fontWeight: '600',
@@ -576,6 +594,7 @@ const FraudDashboard = () => {
                                     <div>{ __( 'Customer', 'hifqa-fraud-detector' ) }</div>
                                     <div>{ __( 'Risk Score', 'hifqa-fraud-detector' ) }</div>
                                     <div>{ __( 'Decision', 'hifqa-fraud-detector' ) }</div>
+                                    <div>{ __( 'AI Check', 'hifqa-fraud-detector' ) }</div>
                                     <div>{ __( 'Countries', 'hifqa-fraud-detector' ) }</div>
                                     <div>{ __( 'Amount', 'hifqa-fraud-detector' ) }</div>
                                     <div>{ __( 'Feedback', 'hifqa-fraud-detector' ) }</div>
@@ -592,7 +611,7 @@ const FraudDashboard = () => {
                                                 onClick={() => setSelected( selected === order.id ? null : order.id )}
                                                 style={{
                                                     display: 'grid',
-                                                    gridTemplateColumns: '60px 1fr 130px 100px 90px 90px 160px',
+                                                    gridTemplateColumns: '60px 1fr 130px 100px 110px 90px 90px 160px',
                                                     padding: '12px 16px',
                                                     borderBottom: '1px solid #f1f5f9',
                                                     alignItems: 'center',
@@ -615,6 +634,7 @@ const FraudDashboard = () => {
                                                 </div>
                                                 <ScoreBar score={order.risk_score} />
                                                 <Badge decision={order.decision} />
+                                                <AiStatus status={order.ai_status} />
                                                 <div style={{ fontFamily: 'monospace', fontSize: '12px', color: '#94a3b8' }}>
                                                     {order.billing_country}→{order.shipping_country}
                                                 </div>

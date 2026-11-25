@@ -50,6 +50,8 @@ function aifd_uninstall_site() {
         'aifd_block_threshold',
         'aifd_review_threshold',
         'aifd_ai_hourly_budget',
+        'aifd_ai_budget_skips',
+        'aifd_ai_budget_notice_dismissed',
         'aifd_merchant_weights',
         'aifd_signal_override_counts',
         'aifd_confirmed_patterns',

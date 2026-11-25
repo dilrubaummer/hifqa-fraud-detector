@@ -680,3 +680,89 @@ function aifd_provider_switch_notice() {
     <?php
 
 }
+// Warn when the hourly AI limit turned orders away
+add_action( 'admin_notices', 'aifd_ai_budget_notice' );
+
+/**
+ * Screens that show the hourly-limit notice: the main Dashboard, the
+ * WooCommerce order screens (legacy and HPOS) and HIFQA's own pages.
+ */
+function aifd_is_ai_budget_notice_screen( $screen ) {
+
+    if ( ! $screen ) {
+        return false;
+    }
+
+    $order_screens = array( 'dashboard', 'edit-shop_order', 'shop_order', 'woocommerce_page_wc-orders' );
+
+    return in_array( $screen->id, $order_screens, true ) || false !== strpos( $screen->id, 'hifqa-fraud-detector' );
+
+}
+
+/**
+ * One notice while orders skipped by the hourly AI limit in the last 24 hours
+ * have not been dismissed. A skip after the dismissal shows it again.
+ */
+function aifd_ai_budget_notice() {
+
+    if ( ! current_user_can( 'manage_options' ) || ! aifd_is_ai_budget_notice_screen( get_current_screen() ) ) return;
+
+    $skips = aifd_get_recent_ai_budget_skips();
+
+    if ( $skips['count'] < 1 || $skips['last'] <= (int) get_option( 'aifd_ai_budget_notice_dismissed', 0 ) ) return;
+
+    $settings_url = admin_url( 'admin.php?page=hifqa-fraud-detector-settings' );
+    $dismiss_url  = wp_nonce_url( admin_url( 'admin-post.php?action=aifd_dismiss_ai_budget_notice' ), 'aifd_dismiss_ai_budget_notice' );
+
+    ?>
+    <div class="notice notice-warning aifd-budget-notice">
+        <p>
+            <strong><?php esc_html_e( 'HIFQA Fraud Detector:', 'hifqa-fraud-detector' ); ?></strong>
+            <?php
+            printf(
+                /* translators: 1: number of orders, 2: the hourly AI check limit */
+                esc_html( _n(
+                    'In the last 24 hours, %1$d order was not checked by the AI because the hourly limit of %2$d AI checks was reached. It kept its local-rules result.',
+                    'In the last 24 hours, %1$d orders were not checked by the AI because the hourly limit of %2$d AI checks was reached. They kept their local-rules result.',
+                    $skips['count'],
+                    'hifqa-fraud-detector'
+                ) ),
+                (int) $skips['count'],
+                (int) aifd_get_ai_hourly_budget()
+            );
+            ?>
+            <?php esc_html_e( 'This can mean a bot attack on your checkout, or a limit set too low for your store.', 'hifqa-fraud-detector' ); ?>
+        </p>
+        <p>
+            <a href="<?php echo esc_url( $settings_url ); ?>"><?php esc_html_e( 'Review the hourly limit', 'hifqa-fraud-detector' ); ?></a>
+            &nbsp;|&nbsp;
+            <a href="<?php echo esc_url( $dismiss_url ); ?>"><?php esc_html_e( 'Dismiss', 'hifqa-fraud-detector' ); ?></a>
+        </p>
+    </div>
+    <?php
+
+}
+
+add_action( 'admin_post_aifd_dismiss_ai_budget_notice', 'aifd_handle_dismiss_ai_budget_notice' );
+
+/**
+ * Hide the hourly-limit notice until the next skip.
+ */
+function aifd_dismiss_ai_budget_notice() {
+    update_option( 'aifd_ai_budget_notice_dismissed', time(), false );
+}
+
+function aifd_handle_dismiss_ai_budget_notice() {
+
+    if ( ! current_user_can( 'manage_options' ) ) {
+        wp_die( esc_html__( 'You do not have permission to do this.', 'hifqa-fraud-detector' ), '', array( 'response' => 403 ) );
+    }
+
+    check_admin_referer( 'aifd_dismiss_ai_budget_notice' );
+
+    aifd_dismiss_ai_budget_notice();
+
+    wp_safe_redirect( wp_get_referer() ?: admin_url() );
+    exit;
+
+}

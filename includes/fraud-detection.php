@@ -488,6 +488,58 @@ function aifd_take_ai_budget() {
 }
 
 /**
+ * Count one order skipped because this hour's AI limit was used up.
+ *
+ * Kept as one small option: a count per hour for the last 24 hours, and the
+ * time of the latest skip. It feeds the admin notice; no order note is added.
+ */
+function aifd_record_ai_budget_skip() {
+
+    $skips = get_option( 'aifd_ai_budget_skips', array() );
+    $hours = aifd_recent_ai_budget_skip_hours( is_array( $skips ) ? (array) ( $skips['hours'] ?? array() ) : array() );
+    $hour  = gmdate( 'YmdH' );
+
+    $hours[ $hour ] = (int) ( $hours[ $hour ] ?? 0 ) + 1;
+
+    update_option( 'aifd_ai_budget_skips', array( 'hours' => $hours, 'last' => time() ) );
+
+}
+
+/**
+ * The per-hour skip counts from the current hour and the 23 before it.
+ */
+function aifd_recent_ai_budget_skip_hours( array $hours ) {
+
+    $oldest = gmdate( 'YmdH', time() - 23 * HOUR_IN_SECONDS );
+
+    return array_filter( $hours, function ( $hour ) use ( $oldest ) {
+        return (string) $hour >= $oldest;
+    }, ARRAY_FILTER_USE_KEY );
+
+}
+
+/**
+ * Orders skipped by the hourly AI limit in the last 24 hours, and when the
+ * latest one was skipped.
+ *
+ * @return array{count: int, last: int}
+ */
+function aifd_get_recent_ai_budget_skips() {
+
+    $skips = get_option( 'aifd_ai_budget_skips', array() );
+
+    if ( ! is_array( $skips ) ) {
+        return array( 'count' => 0, 'last' => 0 );
+    }
+
+    return array(
+        'count' => (int) array_sum( aifd_recent_ai_budget_skip_hours( (array) ( $skips['hours'] ?? array() ) ) ),
+        'last'  => (int) ( $skips['last'] ?? 0 ),
+    );
+
+}
+
+/**
  * Record where the AI layer is for an order: queued, done, failed or skipped.
  */
 function aifd_set_ai_status( $order_id, $status ) {
@@ -584,6 +636,7 @@ function aifd_run_ai_scoring( $order_id ) {
     // Counted before any call is made: a failed call costs money too.
     if ( ! aifd_take_ai_budget() ) {
         aifd_set_ai_status( $order_id, 'skipped_budget' );
+        aifd_record_ai_budget_skip();
         aifd_log_failure( 'ai_budget', sprintf( 'The hourly limit of %d AI checks was reached, so this order keeps its local result', aifd_get_ai_hourly_budget() ), $order_id );
         return;
     }
