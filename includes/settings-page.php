@@ -149,6 +149,10 @@ function aifd_sanitize_review_threshold( $value ) {
     return min( 100, absint( $value ) );
 }
 
+function aifd_sanitize_ai_hourly_budget( $value ) {
+    return min( 1000, max( 1, absint( $value ) ) );
+}
+
 function aifd_sanitize_pinecone_host( $value ) {
     // Order data is only ever sent to Pinecone over HTTPS.
     return esc_url_raw( trim( (string) $value ), array( 'https' ) );
@@ -199,6 +203,13 @@ function aifd_register_settings() {
         'type'              => 'string',
         'sanitize_callback' => 'aifd_sanitize_ollama_model',
         'default'           => 'llama3',
+    ));
+
+    // AI checks per hour
+    register_setting( 'aifd_settings', 'aifd_ai_hourly_budget', array(
+        'type'              => 'integer',
+        'sanitize_callback' => 'aifd_sanitize_ai_hourly_budget',
+        'default'           => aifd_get_default_ai_hourly_budget(),
     ));
 
     // Risk thresholds
@@ -395,6 +406,14 @@ function aifd_render_settings_page() {
                         <label><input type="radio" name="aifd_ai_provider" value="anthropic" <?php checked( $provider, 'anthropic' ); ?>> Anthropic (Claude)</label><br>
                         <label><input type="radio" name="aifd_ai_provider" value="gemini" <?php checked( $provider, 'gemini' ); ?>> Google Gemini</label><br>
                         <label><input type="radio" name="aifd_ai_provider" value="ollama" <?php checked( $provider, 'ollama' ); ?>> <?php esc_html_e( 'Ollama (self-hosted)', 'hifqa-fraud-detector' ); ?></label>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row"><?php esc_html_e( 'Hourly AI Limit', 'hifqa-fraud-detector' ); ?></th>
+                    <td>
+                        <input type="number" name="aifd_ai_hourly_budget" value="<?php echo esc_attr( get_option( 'aifd_ai_hourly_budget', aifd_get_default_ai_hourly_budget() ) ); ?>" min="1" max="1000" class="small-text">
+                        <?php esc_html_e( 'AI checks per hour', 'hifqa-fraud-detector' ); ?>
+                        <p class="description"><?php esc_html_e( 'Each borderline order uses one check. Once the limit is reached, further orders that hour keep their local result, so a burst of bot checkouts cannot run up your AI bill.', 'hifqa-fraud-detector' ); ?></p>
                     </td>
                 </tr>
             </table>

@@ -547,6 +547,8 @@ class HardeningTest extends TestCase {
 		update_option( 'aifd_merchant_weights', array( 'odd_hours' => 0.5 ) );
 		update_option( 'aifd_confirmed_patterns', array( array( 'order_id' => 1 ) ) );
 		set_transient( 'aifd_provider_circuit_open', true, 600 );
+		update_option( 'aifd_ai_hourly_budget', 20 );
+		set_transient( 'aifd_ai_budget', array( 'hour' => gmdate( 'YmdH' ), 'count' => 3 ), HOUR_IN_SECONDS );
 		update_option( 'unrelated_plugin_option', 'keep me' );
 
 		if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {

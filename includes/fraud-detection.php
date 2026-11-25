@@ -449,6 +449,45 @@ function aifd_is_ai_borderline( $score ) {
 }
 
 /**
+ * AI checks allowed per hour while the store has saved no limit of its own.
+ */
+function aifd_get_default_ai_hourly_budget() {
+    return 50;
+}
+
+/**
+ * AI checks allowed per hour (one check is one order, whatever it costs).
+ */
+function aifd_get_ai_hourly_budget() {
+    return min( 1000, max( 1, (int) get_option( 'aifd_ai_hourly_budget', aifd_get_default_ai_hourly_budget() ) ) );
+}
+
+/**
+ * Count one AI check against this hour's budget.
+ *
+ * A burst of bot checkouts must not turn into a matching burst of paid AI
+ * calls. The counter is not atomic, so checks running at the same moment
+ * can go a few over the limit.
+ *
+ * @return bool False when this hour's budget is used up (nothing is counted).
+ */
+function aifd_take_ai_budget() {
+
+    $hour  = gmdate( 'YmdH' );
+    $used  = get_transient( 'aifd_ai_budget' );
+    $count = ( is_array( $used ) && ( $used['hour'] ?? '' ) === $hour ) ? (int) $used['count'] : 0;
+
+    if ( $count >= aifd_get_ai_hourly_budget() ) {
+        return false;
+    }
+
+    set_transient( 'aifd_ai_budget', array( 'hour' => $hour, 'count' => $count + 1 ), 2 * HOUR_IN_SECONDS );
+
+    return true;
+
+}
+
+/**
  * Record where the AI layer is for an order: queued, done, failed or skipped.
  */
 function aifd_set_ai_status( $order_id, $status ) {
@@ -539,6 +578,13 @@ function aifd_run_ai_scoring( $order_id ) {
     if ( ! aifd_tier2_ready() ) {
         aifd_set_ai_status( $order_id, 'skipped' );
         aifd_log_failure( 'ai_queue', 'The AI layer was off or paused when the queued check ran', $order_id );
+        return;
+    }
+
+    // Counted before any call is made: a failed call costs money too.
+    if ( ! aifd_take_ai_budget() ) {
+        aifd_set_ai_status( $order_id, 'skipped_budget' );
+        aifd_log_failure( 'ai_budget', sprintf( 'The hourly limit of %d AI checks was reached, so this order keeps its local result', aifd_get_ai_hourly_budget() ), $order_id );
         return;
     }
 

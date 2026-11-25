@@ -48,6 +48,7 @@ function aifd_uninstall_site() {
         // Thresholds and learned weights
         'aifd_block_threshold',
         'aifd_review_threshold',
+        'aifd_ai_hourly_budget',
         'aifd_merchant_weights',
         'aifd_signal_override_counts',
         'aifd_confirmed_patterns',
@@ -75,6 +76,7 @@ function aifd_uninstall_site() {
         'aifd_pinecone_circuit_open',
         'aifd_provider_fails',
         'aifd_provider_circuit_open',
+        'aifd_ai_budget',
     );
 
     foreach ( $transients as $transient ) {

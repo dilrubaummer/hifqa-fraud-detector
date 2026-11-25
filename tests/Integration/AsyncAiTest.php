@@ -224,6 +224,132 @@ class AsyncAiTest extends TestCase {
 		$this->assertSame( 'skipped', $order->get_meta( '_aifd_ai_status' ) );
 	}
 
+	// ── Hourly AI budget ───────────────────────────────
+
+	/**
+	 * Capture what the plugin writes to the WooCommerce log.
+	 */
+	private function spy_on_log() {
+		$spy = new class() extends \WC_Logger {
+			public $entries = array();
+			public function __construct() {
+				parent::__construct( array() );
+			}
+			public function log( $level, $message, $context = array() ) {
+				$this->entries[] = $message;
+			}
+		};
+		add_filter( 'woocommerce_logging_class', function () use ( $spy ) {
+			return $spy;
+		} );
+		return $spy;
+	}
+
+	/**
+	 * Borderline orders that do not look like one burst (own email and IP each).
+	 */
+	private function make_borderline_orders( $count ) {
+		$orders = array();
+		for ( $i = 1; $i <= $count; $i++ ) {
+			$orders[] = $this->make_order( $this->risky_order_props( array(
+				'billing_email'       => "buyer{$i}@mailinator.com",
+				'customer_ip_address' => "198.51.100.{$i}",
+			) ) );
+		}
+		return $orders;
+	}
+
+	private function ai_statuses( array $orders ) {
+		$statuses = array_map( function ( $order ) {
+			return wc_get_order( $order->get_id() )->get_meta( '_aifd_ai_status' );
+		}, $orders );
+		sort( $statuses );
+		return $statuses;
+	}
+
+	public function test_hourly_budget_stops_ai_calls_once_used_up() {
+		$log = $this->spy_on_log();
+		update_option( 'aifd_ai_hourly_budget', 2 );
+		$this->ai_replies_with( array( 'risk_score' => 50, 'decision' => 'REVIEW', 'reason' => 'x' ) );
+
+		$orders = $this->make_borderline_orders( 3 );
+		$this->assertSame( 3, $this->run_queued_ai() );
+
+		$this->assertCount( 2, $this->http_requests, 'two AI calls, not three' );
+		$this->assertSame( array( 'done', 'done', 'skipped_budget' ), $this->ai_statuses( $orders ) );
+
+		foreach ( $orders as $order ) {
+			$order = wc_get_order( $order->get_id() );
+			if ( 'skipped_budget' === $order->get_meta( '_aifd_ai_status' ) ) {
+				$this->assertSame( 'REVIEW', $order->get_meta( '_aifd_decision' ), 'keeps its local result' );
+				$this->assertSame( 'local_rules', $order->get_meta( '_aifd_provider' ) );
+			}
+		}
+
+		$this->assertStringContainsString( 'hourly limit of 2 AI checks was reached', implode( "\n", $log->entries ) );
+	}
+
+	public function test_failed_ai_calls_count_toward_the_budget() {
+		update_option( 'aifd_ai_hourly_budget', 1 );
+		update_option( 'aifd_ai_provider', 'gemini' );
+		update_option( 'aifd_gemini_key', 'AIza-test-key' );
+		$this->respond_with( function () {
+			return self::json_response( array( 'error' => array( 'message' => 'Overloaded' ) ), 503 );
+		} );
+
+		$orders = $this->make_borderline_orders( 2 );
+		$this->run_queued_ai();
+
+		$this->assertCount( 1, $this->http_requests );
+		$this->assertSame( array( 'failed', 'skipped_budget' ), $this->ai_statuses( $orders ) );
+	}
+
+	public function test_budget_starts_again_in_a_new_hour() {
+		update_option( 'aifd_ai_hourly_budget', 2 );
+		set_transient( 'aifd_ai_budget', array( 'hour' => gmdate( 'YmdH', time() - HOUR_IN_SECONDS ), 'count' => 2 ), HOUR_IN_SECONDS );
+
+		$this->assertTrue( aifd_take_ai_budget(), 'last hour\'s count does not carry over' );
+		$this->assertSame( array( 'hour' => gmdate( 'YmdH' ), 'count' => 1 ), get_transient( 'aifd_ai_budget' ) );
+		$this->assertTrue( aifd_take_ai_budget() );
+		$this->assertFalse( aifd_take_ai_budget(), 'the third check this hour is over the limit' );
+		$this->assertSame( 2, get_transient( 'aifd_ai_budget' )['count'], 'a refused check is not counted' );
+	}
+
+	public function test_budget_defaults_to_50_and_stays_in_range() {
+		delete_option( 'aifd_ai_hourly_budget' );
+		$this->assertSame( 50, aifd_get_ai_hourly_budget() );
+
+		$this->assertSame( 1, aifd_sanitize_ai_hourly_budget( 0 ) );
+		$this->assertSame( 1, aifd_sanitize_ai_hourly_budget( 'abc' ) );
+		$this->assertSame( 25, aifd_sanitize_ai_hourly_budget( '25' ) );
+		$this->assertSame( 1000, aifd_sanitize_ai_hourly_budget( 5000 ) );
+
+		// A value stored without the settings form is still kept in range.
+		update_option( 'aifd_ai_hourly_budget', 0 );
+		$this->assertSame( 1, aifd_get_ai_hourly_budget() );
+	}
+
+	public function test_missing_budget_option_and_counter_do_not_break_the_queued_check() {
+		delete_option( 'aifd_ai_hourly_budget' );
+		delete_transient( 'aifd_ai_budget' );
+		$this->ai_replies_with( array( 'risk_score' => 50, 'decision' => 'REVIEW', 'reason' => 'x' ) );
+
+		$order = $this->make_order_and_run_ai( $this->risky_order_props() );
+
+		$this->assertSame( 'done', $order->get_meta( '_aifd_ai_status' ) );
+		$this->assertSame( 1, get_transient( 'aifd_ai_budget' )['count'] );
+	}
+
+	public function test_settings_page_shows_the_hourly_limit() {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+
+		ob_start();
+		aifd_render_settings_page();
+		$html = ob_get_clean();
+
+		$this->assertMatchesRegularExpression( '/name="aifd_ai_hourly_budget" value="50"/', $html );
+	}
+
 	// ── Deactivation ───────────────────────────────────
 
 	/**
