@@ -65,6 +65,87 @@ abstract class TestCase extends WP_UnitTestCase {
 		);
 	}
 
+	// ── Scripted AI agent runs (tool-call path) ────────
+
+	/**
+	 * A complete agent run, in the order the system prompt asks for, ending in
+	 * calculate_final_risk with this reasoning. $claims are extra figures the
+	 * model sends along with it, which the store must ignore.
+	 */
+	protected function full_agent_run( $reasoning, array $claims = array() ) {
+		return array(
+			array(
+				array( 'check_signal_weights', array( 'include_reasons' => true ) ),
+				array( 'search_fraud_patterns', array() ),
+			),
+			array( array( 'check_velocity', array( 'window_minutes' => 60 ) ) ),
+			array( array( 'calculate_final_risk', array_merge( $claims, array( 'reasoning' => $reasoning ) ) ) ),
+		);
+	}
+
+	/**
+	 * Fake an OpenAI agent. Each turn is a list of [ tool name, arguments ]; after
+	 * the last turn the model stops. The script starts over for the next order.
+	 */
+	protected function openai_agent_replies_with( array $turns ) {
+		update_option( 'aifd_ai_provider', 'openai' );
+		update_option( 'aifd_openai_key', 'sk-test' );
+
+		$replies = array();
+		foreach ( $turns as $t => $calls ) {
+			$tool_calls = array();
+			foreach ( $calls as $c => $call ) {
+				$tool_calls[] = array(
+					'id'       => "call_{$t}_{$c}",
+					'type'     => 'function',
+					'function' => array( 'name' => $call[0], 'arguments' => wp_json_encode( (object) $call[1] ) ),
+				);
+			}
+			$replies[] = array( 'choices' => array( array(
+				'finish_reason' => 'tool_calls',
+				'message'       => array( 'role' => 'assistant', 'content' => null, 'tool_calls' => $tool_calls ),
+			) ) );
+		}
+		$replies[] = array( 'choices' => array( array(
+			'finish_reason' => 'stop',
+			'message'       => array( 'role' => 'assistant', 'content' => 'Done.' ),
+		) ) );
+
+		$this->reply_in_turn( $replies );
+	}
+
+	/**
+	 * Fake an Anthropic agent, with the same turns as openai_agent_replies_with().
+	 */
+	protected function anthropic_agent_replies_with( array $turns ) {
+		update_option( 'aifd_ai_provider', 'anthropic' );
+		update_option( 'aifd_anthropic_key', 'ak-test' );
+
+		$replies = array();
+		foreach ( $turns as $t => $calls ) {
+			$blocks = array();
+			foreach ( $calls as $c => $call ) {
+				$blocks[] = array( 'type' => 'tool_use', 'id' => "toolu_{$t}_{$c}", 'name' => $call[0], 'input' => (object) $call[1] );
+			}
+			$replies[] = array( 'stop_reason' => 'tool_use', 'content' => $blocks );
+		}
+		$replies[] = array( 'stop_reason' => 'end_turn', 'content' => array( array( 'type' => 'text', 'text' => 'Done.' ) ) );
+
+		$this->reply_in_turn( $replies );
+	}
+
+	/**
+	 * Answer successive requests with successive replies, starting over after the last.
+	 */
+	private function reply_in_turn( array $replies ) {
+		$next = 0;
+		$this->respond_with( function () use ( $replies, &$next ) {
+			$reply = $replies[ $next ];
+			$next  = ( $next + 1 ) % count( $replies );
+			return self::json_response( $reply );
+		} );
+	}
+
 	/**
 	 * Hosts contacted during the test, in order.
 	 */

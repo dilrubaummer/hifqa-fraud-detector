@@ -241,7 +241,7 @@ class ProvidersTest extends TestCase {
 		$this->assertSame( 'fallback', $result['source'] );
 	}
 
-	public function test_anthropic_agent_parses_text_verdict() {
+	public function test_anthropic_agent_text_verdict_is_a_failed_call() {
 		update_option( 'aifd_anthropic_key', 'ak-test' );
 		$this->respond_with( function () {
 			return self::json_response( array(
@@ -252,8 +252,38 @@ class ProvidersTest extends TestCase {
 
 		$result = ( new AIFD_FunctionCalling( $this->agent_signals() ) )->run_anthropic();
 
-		$this->assertSame( 'anthropic_function_calling', $result['source'] );
+		$this->assertSame( 'fallback', $result['source'] );
+		$this->assertStringContainsString( 'without calling calculate_final_risk', $result['reason'] );
+		$this->assertNotEquals( self::VERDICT['risk_score'], $result['risk_score'], 'the model\'s own score is never used' );
 		$this->assertSame( 'api.anthropic.com', $this->requested_hosts()[0] );
+	}
+
+	public function test_openai_agent_text_verdict_is_a_failed_call() {
+		update_option( 'aifd_openai_key', 'sk-test' );
+		$this->respond_with( function () {
+			return self::json_response( array( 'choices' => array( array(
+				'finish_reason' => 'stop',
+				'message'       => array( 'role' => 'assistant', 'content' => wp_json_encode( self::VERDICT ) ),
+			) ) ) );
+		} );
+
+		$result = ( new AIFD_FunctionCalling( $this->agent_signals() ) )->run_openai();
+
+		$this->assertSame( 'fallback', $result['source'] );
+		$this->assertStringContainsString( 'without calling calculate_final_risk', $result['reason'] );
+		$this->assertInstanceOf( \WP_Error::class, aifd_normalize_ai_result( $result ), 'the caller treats it as a failure' );
+	}
+
+	public function test_anthropic_agent_verdict_comes_from_the_final_tool_call() {
+		$this->anthropic_agent_replies_with( $this->full_agent_run( 'Disposable email on a first order', array( 'risk_score' => 99 ) ) );
+
+		$result = ( new AIFD_FunctionCalling( $this->agent_signals() ) )->run_anthropic();
+
+		$this->assertSame( 'anthropic_function_calling', $result['source'] );
+		$this->assertEquals( 22, $result['risk_score'], 'disposable_email alone: 11 local, ×2 calibration; the claimed 99 is ignored' );
+		$this->assertSame( 'Disposable email on a first order', $result['reason'] );
+		$this->assertCount( 4, $this->http_requests );
+		$this->assertSame( array( 'api.anthropic.com' ), array_values( array_unique( $this->requested_hosts() ) ) );
 	}
 
 	public function test_agent_rejects_unknown_tools() {
@@ -365,23 +395,22 @@ class ProvidersTest extends TestCase {
 	}
 
 	public function test_agent_sends_email_domain_only_and_never_ip_or_phone() {
-		update_option( 'aifd_openai_key', 'sk-test' );
-		$this->respond_with( function () {
-			return self::json_response( array( 'choices' => array( array(
-				'finish_reason' => 'stop',
-				'message'       => array( 'role' => 'assistant', 'content' => wp_json_encode( self::VERDICT ) ),
-			) ) ) );
-		} );
+		// A full run, so the velocity tool's result (counted by IP and email) is checked too.
+		$this->openai_agent_replies_with( $this->full_agent_run( 'ok' ) );
 
 		$signals                  = $this->agent_signals();
 		$signals['billing_phone'] = '555-867-5309';
-		( new AIFD_FunctionCalling( $signals ) )->run_openai();
+		$result                   = ( new AIFD_FunctionCalling( $signals ) )->run_openai();
 
-		$body = $this->http_requests[0]['args']['body'];
-		$this->assertStringContainsString( 'mailinator.com', $body );
-		$this->assertStringNotContainsString( 'buyer@', $body );
-		$this->assertStringNotContainsString( '203.0.113.5', $body );
-		$this->assertStringNotContainsString( '555-867-5309', $body );
+		$this->assertSame( 'openai_function_calling', $result['source'], 'precondition: the run completed' );
+		$this->assertCount( 4, $this->http_requests );
+		foreach ( $this->http_requests as $request ) {
+			$body = $request['args']['body'];
+			$this->assertStringContainsString( 'mailinator.com', $body );
+			$this->assertStringNotContainsString( 'buyer@', $body );
+			$this->assertStringNotContainsString( '203.0.113.5', $body );
+			$this->assertStringNotContainsString( '555-867-5309', $body );
+		}
 	}
 
 	// ── Embeddings + Pinecone ──────────────────────────

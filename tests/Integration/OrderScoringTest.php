@@ -163,25 +163,17 @@ class OrderScoringTest extends TestCase {
 	// ── AI tier (opt-in) ───────────────────────────────
 
 	public function test_ai_verdict_replaces_local_score_when_configured() {
-		update_option( 'aifd_ai_provider', 'openai' );
-		update_option( 'aifd_openai_key', 'sk-test' );
-		$this->respond_with( function () {
-			return self::json_response( array( 'choices' => array( array(
-				'finish_reason' => 'stop',
-				'message'       => array( 'content' => wp_json_encode( array(
-					'risk_score' => 91,
-					'risk_level' => 'HIGH',
-					'decision'   => 'BLOCK',
-					'reason'     => 'AI: stolen card pattern',
-				) ) ),
-			) ) ) );
-		} );
+		$this->openai_agent_replies_with( $this->full_agent_run( 'AI: stolen card pattern' ) );
 
-		$order = $this->make_order();
+		$order = $this->make_order( $this->risky_order_props() );
+		$local = aifd_calculate_risk_score( aifd_extract_signals( $order ) );
 
+		$this->assertSame( 'REVIEW', $local['decision'], 'precondition: local rules alone only flag it' );
 		$this->assertSame( 'BLOCK', $order->get_meta( '_aifd_decision' ) );
 		$this->assertSame( 'openai_function_calling', $order->get_meta( '_aifd_provider' ) );
 		$this->assertSame( 'on-hold', $order->get_status() );
+		$this->assertGreaterThan( $local['risk_score'], (int) $order->get_meta( '_aifd_risk_score' ) );
+		$this->assertSame( 'AI: stolen card pattern', $order->get_meta( '_aifd_reason' ) );
 	}
 
 	public function test_ai_failure_falls_back_to_local_score_and_counts_toward_circuit() {
@@ -217,18 +209,26 @@ class OrderScoringTest extends TestCase {
 	 *
 	 * @dataProvider provider_routes
 	 */
-	public function test_selected_provider_is_the_one_called( $provider, $options, $expected_host, $reply ) {
+	public function test_selected_provider_is_the_one_called( $provider, $options, $expected_host, $reply, $expected_source ) {
 		update_option( 'aifd_ai_provider', $provider );
 		foreach ( $options as $key => $value ) {
 			update_option( $key, $value );
 		}
-		$this->respond_with( function () use ( $reply ) {
-			return self::json_response( $reply );
-		} );
 
-		$order = $this->make_order();
+		if ( 'anthropic' === $provider ) {
+			// Tool-call path: the verdict comes from the agent's final tool call.
+			$this->anthropic_agent_replies_with( $this->full_agent_run( 'AI verdict' ) );
+		} else {
+			$this->respond_with( function () use ( $reply ) {
+				return self::json_response( $reply );
+			} );
+		}
 
-		$this->assertContains( $expected_host, $this->requested_hosts() );
+		// Local rules alone flag this order for review; each verdict below raises it.
+		$order = $this->make_order( $this->risky_order_props() );
+
+		$this->assertSame( array( $expected_host ), array_values( array_unique( $this->requested_hosts() ) ), 'only the selected provider is contacted' );
+		$this->assertSame( $expected_source, $order->get_meta( '_aifd_provider' ), "{$provider} verdict should be applied" );
 		$this->assertSame( 'BLOCK', $order->get_meta( '_aifd_decision' ), "{$provider} verdict should be applied" );
 	}
 
@@ -245,19 +245,22 @@ class OrderScoringTest extends TestCase {
 				'anthropic',
 				array( 'aifd_anthropic_key' => 'ak-test' ),
 				'api.anthropic.com',
-				array( 'stop_reason' => 'end_turn', 'content' => array( array( 'type' => 'text', 'text' => $verdict ) ) ),
+				null, // scripted agent run, see the test
+				'anthropic_function_calling',
 			),
 			'gemini'    => array(
 				'gemini',
 				array( 'aifd_gemini_key' => 'g-test' ),
 				'generativelanguage.googleapis.com',
 				array( 'candidates' => array( array( 'content' => array( 'parts' => array( array( 'text' => $verdict ) ) ) ) ) ),
+				'gemini',
 			),
 			'ollama'    => array(
 				'ollama',
 				array( 'aifd_ollama_host' => 'http://ollama.local:11434' ),
 				'ollama.local',
 				array( 'message' => array( 'content' => $verdict ) ),
+				'ollama',
 			),
 		);
 	}

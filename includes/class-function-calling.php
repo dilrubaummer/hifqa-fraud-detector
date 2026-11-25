@@ -381,12 +381,9 @@ class AIFD_FunctionCalling {
                     return array_merge( $final_result, array( 'source' => 'openai_function_calling' ) );
                 }
 
-                // Fallback — parse text response
-                $parsed = $this->parse_text_verdict( $message['content'] ?? '' );
-
-                return $parsed
-                    ? array_merge( $parsed, array( 'source' => 'openai_function_calling' ) )
-                    : $this->fallback( 'Could not parse final response' );
+                // A verdict written as text carries the model's own numbers, which
+                // are never used for the score: no final tool call is a failed call.
+                return $this->fallback( 'OpenAI finished without calling calculate_final_risk' );
 
             }
 
@@ -488,17 +485,9 @@ class AIFD_FunctionCalling {
                     return array_merge( $final_result, array( 'source' => 'anthropic_function_calling' ) );
                 }
 
-                // Extract text response
-                foreach ( $content as $block ) {
-                    if ( ( $block['type'] ?? '' ) === 'text' ) {
-                        $parsed = $this->parse_text_verdict( $block['text'] ?? '' );
-                        if ( $parsed ) {
-                            return array_merge( $parsed, array( 'source' => 'anthropic_function_calling' ) );
-                        }
-                    }
-                }
-
-                return $this->fallback( 'Could not parse Anthropic response' );
+                // A verdict written as text carries the model's own numbers, which
+                // are never used for the score: no final tool call is a failed call.
+                return $this->fallback( 'Anthropic finished without calling calculate_final_risk' );
 
             }
 
@@ -571,21 +560,6 @@ class AIFD_FunctionCalling {
         }
 
         return $data;
-
-    }
-
-    /**
-     * A JSON verdict the model wrote as plain text, or null if there is none.
-     */
-    private function parse_text_verdict( $text ) {
-
-        if ( ! is_string( $text ) ) {
-            return null;
-        }
-
-        $parsed = json_decode( trim( preg_replace( '/```json|```/', '', $text ) ), true );
-
-        return is_array( $parsed ) ? $parsed : null;
 
     }
 

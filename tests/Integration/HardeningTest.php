@@ -10,17 +10,6 @@ use Hifqa\Tests\TestCase;
  */
 class HardeningTest extends TestCase {
 
-	private function openai_replies_with( array $verdict ) {
-		update_option( 'aifd_ai_provider', 'openai' );
-		update_option( 'aifd_openai_key', 'sk-test' );
-		$this->respond_with( function () use ( $verdict ) {
-			return self::json_response( array( 'choices' => array( array(
-				'finish_reason' => 'stop',
-				'message'       => array( 'role' => 'assistant', 'content' => wp_json_encode( $verdict ) ),
-			) ) ) );
-		} );
-	}
-
 	/**
 	 * Gemini uses the prompt path, where the model's own score is taken (then checked).
 	 */
@@ -41,7 +30,8 @@ class HardeningTest extends TestCase {
 	// ── AI verdict vs local decision ───────────────────
 
 	public function test_ai_allow_cannot_release_an_order_the_local_rules_blocked() {
-		$this->openai_replies_with( array( 'risk_score' => 2, 'risk_level' => 'LOW', 'decision' => 'ALLOW', 'reason' => 'Trusted customer' ) );
+		// Prompt path: the model's own ALLOW verdict is taken, then meets the local block.
+		$this->gemini_replies_with( array( 'risk_score' => 2, 'risk_level' => 'LOW', 'decision' => 'ALLOW', 'reason' => 'Trusted customer' ) );
 		$props = $this->risky_order_props( array( 'customer_ip_address' => '198.51.100.7' ) );
 
 		$this->make_order( $props );
@@ -53,6 +43,23 @@ class HardeningTest extends TestCase {
 		$this->assertGreaterThanOrEqual( 60, (int) $third->get_meta( '_aifd_risk_score' ) );
 		$this->assertSame( 'on-hold', $third->get_status() );
 		$this->assertStringContainsString( 'does not lift a local block', $third->get_meta( '_aifd_reason' ) );
+		$this->assertStringNotContainsString( 'FRAUD CHECK PASSED', $this->notes( $third ) );
+	}
+
+	public function test_agent_claiming_allow_cannot_release_an_order_the_local_rules_blocked() {
+		// Tool-call path: the model argues for ALLOW and sends its own low figures.
+		$this->openai_agent_replies_with( $this->full_agent_run( 'Trusted customer', array( 'risk_score' => 2, 'decision' => 'ALLOW' ) ) );
+		$props = $this->risky_order_props( array( 'customer_ip_address' => '198.51.100.7' ) );
+
+		$this->make_order( $props );
+		$this->make_order( $props );
+		$third = $this->make_order( $props );
+
+		$this->assertSame( 'openai_function_calling', $third->get_meta( '_aifd_provider' ), 'precondition: the agent verdict was used' );
+		$this->assertSame( 'BLOCK', $third->get_meta( '_aifd_decision' ) );
+		$this->assertSame( 'HIGH', $third->get_meta( '_aifd_risk_level' ) );
+		$this->assertGreaterThanOrEqual( 60, (int) $third->get_meta( '_aifd_risk_score' ) );
+		$this->assertSame( 'on-hold', $third->get_status() );
 		$this->assertStringNotContainsString( 'FRAUD CHECK PASSED', $this->notes( $third ) );
 	}
 
@@ -77,7 +84,8 @@ class HardeningTest extends TestCase {
 	 * @dataProvider invalid_ai_replies
 	 */
 	public function test_invalid_ai_reply_is_a_failure_and_the_local_verdict_stands( $reply ) {
-		$this->openai_replies_with( $reply );
+		// Prompt path: the only path where the model's own verdict reaches validation.
+		$this->gemini_replies_with( $reply );
 
 		$order = $this->make_order( $this->risky_order_props() );
 
@@ -97,8 +105,43 @@ class HardeningTest extends TestCase {
 		);
 	}
 
+	/**
+	 * Tool-call path: a model that writes its verdict as text, or stops without
+	 * one, has not called calculate_final_risk — that is a failed call.
+	 *
+	 * @dataProvider agent_text_replies
+	 */
+	public function test_agent_reply_without_the_final_tool_is_a_failure_and_the_local_verdict_stands( $text ) {
+		update_option( 'aifd_ai_provider', 'openai' );
+		update_option( 'aifd_openai_key', 'sk-test' );
+		$this->respond_with( function () use ( $text ) {
+			return self::json_response( array( 'choices' => array( array(
+				'finish_reason' => 'stop',
+				'message'       => array( 'role' => 'assistant', 'content' => $text ),
+			) ) ) );
+		} );
+
+		$order = $this->make_order( $this->risky_order_props() );
+
+		$this->assertSame( 'REVIEW', $order->get_meta( '_aifd_decision' ), 'Local rules flagged this order; a bad AI reply must not clear it' );
+		$this->assertSame( 'local_rules', $order->get_meta( '_aifd_provider' ) );
+		$this->assertSame( 1, (int) get_transient( 'aifd_provider_fails' ) );
+		$this->assertStringNotContainsString( 'FRAUD CHECK PASSED', $this->notes( $order ) );
+		$this->assertStringContainsString( 'AI layer was unavailable', $this->notes( $order ) );
+	}
+
+	public function agent_text_replies() {
+		return array(
+			'valid verdict as text'   => array( wp_json_encode( array( 'risk_score' => 1, 'decision' => 'ALLOW', 'reason' => 'ok' ) ) ),
+			'verdict in a code fence' => array( "```json\n" . wp_json_encode( array( 'risk_score' => 1, 'decision' => 'ALLOW' ) ) . "\n```" ),
+			'prose'                   => array( 'This order looks fine to me.' ),
+			'nothing'                 => array( '' ),
+		);
+	}
+
 	public function test_out_of_range_ai_score_is_clamped_before_it_is_stored() {
-		$this->openai_replies_with( array( 'risk_score' => 99999, 'decision' => 'BLOCK', 'reason' => 'Very bad' ) );
+		// Prompt path: only there does the model supply the score.
+		$this->gemini_replies_with( array( 'risk_score' => 99999, 'decision' => 'BLOCK', 'reason' => 'Very bad' ) );
 
 		$order = $this->make_order();
 
@@ -106,12 +149,28 @@ class HardeningTest extends TestCase {
 		$this->assertSame( 'BLOCK', $order->get_meta( '_aifd_decision' ) );
 	}
 
-	public function test_ai_reason_is_stored_without_markup() {
-		$this->openai_replies_with( array( 'risk_score' => 50, 'decision' => 'REVIEW', 'reason' => '<img src=x onerror=alert(1)>Suspicious' ) );
+	/**
+	 * @dataProvider ai_paths
+	 */
+	public function test_ai_reason_is_stored_without_markup( $path ) {
+		$reason = '<img src=x onerror=alert(1)>Suspicious';
+
+		if ( 'agent' === $path ) {
+			$this->openai_agent_replies_with( $this->full_agent_run( $reason ) );
+		} else {
+			$this->gemini_replies_with( array( 'risk_score' => 50, 'decision' => 'REVIEW', 'reason' => $reason ) );
+		}
 
 		$order = $this->make_order();
 
 		$this->assertSame( 'Suspicious', $order->get_meta( '_aifd_reason' ) );
+	}
+
+	public function ai_paths() {
+		return array(
+			'tool-call path (OpenAI agent)' => array( 'agent' ),
+			'prompt path (Gemini)'          => array( 'prompt' ),
+		);
 	}
 
 	public function test_ai_failure_is_logged_without_keys_or_customer_data() {
@@ -144,7 +203,8 @@ class HardeningTest extends TestCase {
 	}
 
 	public function test_requests_to_the_ai_provider_carry_no_direct_identifiers() {
-		$this->openai_replies_with( array( 'risk_score' => 10, 'decision' => 'ALLOW', 'reason' => 'ok' ) );
+		// A full agent run, so the tool results sent back to the model are checked too.
+		$this->openai_agent_replies_with( $this->full_agent_run( 'ok' ) );
 
 		$this->make_order( array(
 			'billing_email'       => 'private.person@example.com',
@@ -155,7 +215,9 @@ class HardeningTest extends TestCase {
 			'customer_ip_address' => '192.0.2.44',
 		) );
 
-		$this->assertNotEmpty( $this->http_requests );
+		// Three tool turns and the closing reply: every message the model saw.
+		$this->assertCount( 4, $this->http_requests );
+		$this->assertStringContainsString( '"role":"tool"', $this->http_requests[3]['args']['body'], 'tool results were sent back' );
 		foreach ( $this->http_requests as $request ) {
 			$body = $request['args']['body'];
 			$this->assertStringContainsString( 'example.com', $body );
