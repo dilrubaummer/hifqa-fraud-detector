@@ -1,6 +1,6 @@
 # HIFQA Fraud Detector — Architecture Document
 
-> Plugin version: 1.0.0
+> Plugin version: 1.1.0
 > Last updated: November 2026
 
 ---

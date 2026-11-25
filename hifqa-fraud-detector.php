@@ -3,7 +3,7 @@
  * Plugin Name: HIFQA Fraud Detector for WooCommerce
  * Plugin URI: https://github.com/dilrubaummer/hifqa-fraud-detector
  * Description: HIFQA Fraud Detector scores every WooCommerce order for fraud in real time. Local signal scoring works out of the box, with optional AI and vector search layers.
- * Version: 1.0.0
+ * Version: 1.1.0
  * Author: HIFQA
  * Requires at least: 6.6
  * Requires PHP: 8.0
@@ -17,7 +17,7 @@
 if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
-define( 'AIFD_VERSION', '1.0.0' );
+define( 'AIFD_VERSION', '1.1.0' );
 define( 'AIFD_PATH', plugin_dir_path( __FILE__ ) );
 define( 'AIFD_URL', plugin_dir_url( __FILE__ ) );
 

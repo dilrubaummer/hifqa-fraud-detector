@@ -165,6 +165,29 @@ class AdminPagesTest extends TestCase {
 
 	// ── Text domain matches the slug ───────────────────
 
+	/**
+	 * WordPress.org reads the version from the plugin header and the readme's
+	 * Stable tag; scripts are cache-busted with AIFD_VERSION. All must agree,
+	 * and the readme must describe the release.
+	 */
+	public function test_version_is_the_same_everywhere_and_the_readme_describes_it() {
+		$header = get_file_data( AIFD_PATH . 'hifqa-fraud-detector.php', array( 'version' => 'Version' ) )['version'];
+		$readme = file_get_contents( AIFD_PATH . 'readme.txt' );
+		$npm    = json_decode( file_get_contents( AIFD_PATH . 'package.json' ), true )['version'];
+
+		$this->assertMatchesRegularExpression( '/^Stable tag: (\S+)$/m', $readme );
+		preg_match( '/^Stable tag: (\S+)$/m', $readme, $stable );
+
+		$this->assertSame( AIFD_VERSION, $header, 'Plugin header' );
+		$this->assertSame( AIFD_VERSION, $stable[1], 'readme.txt Stable tag' );
+		$this->assertSame( AIFD_VERSION, $npm, 'package.json' );
+
+		$changelog = substr( $readme, strpos( $readme, '== Changelog ==' ) );
+		$notice    = substr( $readme, strpos( $readme, '== Upgrade Notice ==' ) );
+		$this->assertStringContainsString( '= ' . AIFD_VERSION . ' =', strstr( $changelog, '== Upgrade Notice ==', true ), 'Changelog entry' );
+		$this->assertStringContainsString( '= ' . AIFD_VERSION . ' =', $notice, 'Upgrade notice' );
+	}
+
 	public function test_all_translation_calls_use_the_hifqa_text_domain() {
 		$files = array_merge(
 			glob( AIFD_PATH . '*.php' ),
