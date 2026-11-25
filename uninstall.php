@@ -82,8 +82,18 @@ function aifd_uninstall_site() {
     }
 
     // AI checks still waiting in the queue would otherwise run with no handler.
-    if ( function_exists( 'as_unschedule_all_actions' ) ) {
-        as_unschedule_all_actions( 'aifd_ai_score_order' );
+    // Only our own hook in our own group (as on deactivation, in aifd_clear_queued_ai_checks()).
+    if ( function_exists( 'as_get_scheduled_actions' ) && class_exists( 'ActionScheduler_Store' ) ) {
+        $aifd_queued = as_get_scheduled_actions( array(
+            'hook'     => 'aifd_ai_score_order',
+            'group'    => 'hifqa-fraud-detector',
+            'status'   => ActionScheduler_Store::STATUS_PENDING,
+            'per_page' => -1,
+        ), 'ids' );
+
+        foreach ( $aifd_queued as $aifd_action_id ) {
+            ActionScheduler_Store::instance()->cancel_action( $aifd_action_id );
+        }
     }
 
 }

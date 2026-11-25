@@ -224,6 +224,51 @@ class AsyncAiTest extends TestCase {
 		$this->assertSame( 'skipped', $order->get_meta( '_aifd_ai_status' ) );
 	}
 
+	// ── Deactivation ───────────────────────────────────
+
+	/**
+	 * Pending action IDs for one hook in one group.
+	 */
+	private function pending( $hook, $group ) {
+		return as_get_scheduled_actions( array(
+			'hook'     => $hook,
+			'group'    => $group,
+			'status'   => \ActionScheduler_Store::STATUS_PENDING,
+			'per_page' => -1,
+		), 'ids' );
+	}
+
+	public function test_deactivation_clears_only_our_own_queued_checks() {
+		$this->ai_replies_with( array( 'risk_score' => 50, 'decision' => 'REVIEW', 'reason' => 'x' ) );
+
+		// Seven: more than Action Scheduler's default page of five results.
+		for ( $i = 1; $i <= 7; $i++ ) {
+			$this->make_order( $this->risky_order_props( array(
+				'billing_email'       => "buyer{$i}@mailinator.com",
+				'customer_ip_address' => "198.51.100.{$i}",
+			) ) );
+		}
+
+		// Actions that are not ours and must survive.
+		$others = array(
+			as_enqueue_async_action( 'other_plugin_task', array( 1 ), 'hifqa-fraud-detector' ), // other hook, our group name
+			as_enqueue_async_action( 'other_plugin_task', array( 2 ), 'other-plugin' ),         // other hook and group
+			as_enqueue_async_action( 'aifd_ai_score_order', array( 999 ), 'other-plugin' ),     // our hook name, other group
+		);
+
+		$this->assertCount( 7, $this->pending( 'aifd_ai_score_order', 'hifqa-fraud-detector' ), 'precondition: seven checks queued' );
+
+		// What WordPress runs when the plugin is deactivated.
+		$hook = 'deactivate_' . plugin_basename( AIFD_PATH . 'hifqa-fraud-detector.php' );
+		$this->assertNotFalse( has_action( $hook, 'aifd_clear_queued_ai_checks' ), 'registered as the deactivation hook' );
+		do_action( $hook, false );
+
+		$this->assertSame( array(), $this->pending( 'aifd_ai_score_order', 'hifqa-fraud-detector' ) );
+		foreach ( $others as $id ) {
+			$this->assertSame( \ActionScheduler_Store::STATUS_PENDING, \ActionScheduler::store()->get_status( $id ), "action {$id} is not ours and stays" );
+		}
+	}
+
 	public function test_agreeing_ai_verdict_sends_no_second_alert() {
 		$this->ai_replies_with( array( 'risk_score' => 50, 'decision' => 'REVIEW', 'reason' => 'Agrees' ) );
 

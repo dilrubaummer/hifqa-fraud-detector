@@ -48,3 +48,6 @@ require_once AIFD_PATH . 'includes/class-embeddings.php';
 require_once AIFD_PATH . 'includes/class-pinecone.php';
 require_once AIFD_PATH . 'includes/class-seed-loader.php';
 require_once AIFD_PATH . 'includes/class-function-calling.php';
+
+// Queued AI checks would otherwise run with no handler while the plugin is inactive.
+register_deactivation_hook( __FILE__, 'aifd_clear_queued_ai_checks' );

@@ -488,6 +488,31 @@ function aifd_maybe_queue_ai_scoring( $order_id, $local_result ) {
 }
 
 /**
+ * Remove this plugin's queued AI checks (on deactivation). Only our own hook
+ * in our own group: other plugins' scheduled actions are never touched.
+ */
+function aifd_clear_queued_ai_checks() {
+
+    if ( ! function_exists( 'as_get_scheduled_actions' ) || ! class_exists( 'ActionScheduler_Store' ) ) {
+        return;
+    }
+
+    // as_unschedule_all_actions() cannot match a hook and a group together
+    // unless the arguments match too, so look the actions up first.
+    $ids = as_get_scheduled_actions( array(
+        'hook'     => 'aifd_ai_score_order',
+        'group'    => 'hifqa-fraud-detector',
+        'status'   => ActionScheduler_Store::STATUS_PENDING,
+        'per_page' => -1,
+    ), 'ids' );
+
+    foreach ( $ids as $id ) {
+        ActionScheduler_Store::instance()->cancel_action( $id );
+    }
+
+}
+
+/**
  * The queued AI check for one order (Action Scheduler callback).
  *
  * The verdict the order carries when the check runs is the floor: the AI can

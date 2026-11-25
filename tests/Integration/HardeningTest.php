@@ -534,7 +534,16 @@ class HardeningTest extends TestCase {
 		}
 		update_option( 'aifd_ai_provider', 'gemini' );
 		$order = $this->make_order( $this->risky_order_props() );
-		$this->assertCount( 1, $this->queued_ai_checks(), 'precondition: an AI check is waiting' );
+		// Six more: seven in all, more than Action Scheduler's default page of five results.
+		for ( $i = 2; $i <= 7; $i++ ) {
+			$this->make_order( $this->risky_order_props( array(
+				'billing_email'       => "buyer{$i}@mailinator.com",
+				'customer_ip_address' => "198.51.100.{$i}",
+			) ) );
+		}
+		$this->assertCount( 7, $this->queued_ai_checks(), 'precondition: seven AI checks are waiting' );
+		// Same hook name, another plugin's group: not ours, must survive.
+		$foreign = as_enqueue_async_action( 'aifd_ai_score_order', array( 999 ), 'other-plugin' );
 		update_option( 'aifd_merchant_weights', array( 'odd_hours' => 0.5 ) );
 		update_option( 'aifd_confirmed_patterns', array( array( 'order_id' => 1 ) ) );
 		set_transient( 'aifd_provider_circuit_open', true, 600 );
@@ -548,7 +557,7 @@ class HardeningTest extends TestCase {
 		global $wpdb;
 		$left = $wpdb->get_col( "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE 'aifd\\_%' OR option_name LIKE '\\_transient\\_aifd\\_%' OR option_name LIKE '\\_transient\\_timeout\\_aifd\\_%'" );
 		$this->assertSame( array(), $left );
-		$this->assertSame( array(), $this->queued_ai_checks(), 'queued AI checks are removed' );
+		$this->assertSame( array( (string) $foreign ), array_map( 'strval', $this->queued_ai_checks() ), 'our queued AI checks are removed, the other group\'s action is not' );
 		$this->assertFalse( get_transient( 'aifd_provider_circuit_open' ) );
 		$this->assertSame( 'keep me', get_option( 'unrelated_plugin_option' ) );
 
